@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // SPI TFTs (ILI9341 320x240, ST7796 480x320) with FT6336 touch, without LVGL.
 // No full frame buffer (a 320x240 frame is 150 KB of the C6's 512 KB): the UI
-// is drawn band by band into two 48-row DMA buffers (30 KB each at 320 wide), and a band goes over SPI
+// is drawn band by band into two DMA buffers of up to 96 rows (60 KB each at 320 wide).
+// Bands follow the layout's sections, so the scrolling waveform goes out in one transfer, and a band goes over SPI
 // only if its pixels changed since the last frame (hash per band). A playing
 // deck mostly changes the waveform and the time, so most bands are skipped.
 #include "hw.h"
@@ -10,6 +11,7 @@
 #include "sdkconfig.h"
 
 #if CONFIG_NANO_DISPLAY_TFT
+#include <stdio.h>
 #include <string.h>
 #include "board.h"
 #include "driver/spi_master.h"
@@ -30,13 +32,15 @@ static constexpr int W = 320, H = 240;
 #else
 static constexpr int W = 480, H = 320;
 #endif
-static constexpr int kRows = 48, kBands = (H + kRows - 1) / kRows;
+static constexpr int kRows = 96;                    // the largest band (the waveform is 94 rows on the 3.2")
+static constexpr int kMaxBands = 16;
+static int s_band[kMaxBands + 1], s_nBands;         // band edges: the layout's sections, split to <= kRows
 static esp_lcd_panel_handle_t s_panel;
 static esp_lcd_touch_handle_t s_touch;
 static uint16_t* s_buf[2];
 static int s_next;
 static SemaphoreHandle_t s_free;          // counts band buffers not on the wire
-static uint32_t s_hash[kBands];
+static uint32_t s_hash[kMaxBands];
 
 #if CONFIG_NANO_DISPLAY_ST7796
 // The ST7796 runs on the ILI9341 driver with its own init sequence (from
@@ -135,8 +139,16 @@ bool begin(i2c_master_bus_handle_t bus)
         if (!b) return false;
     }
     memset(s_hash, 0xFF, sizeof s_hash);            // first frame sends everything
+    int edges[8];
+    const int n = ui::sections(W, H, edges, 8);
+    s_nBands = 0; s_band[0] = 0;
+    for (int i = 1; i < n; i++)
+        for (int y = s_band[s_nBands]; y < edges[i] && s_nBands < kMaxBands; )
+            y = s_band[++s_nBands] = edges[i] - y > kRows ? y + kRows : edges[i];
     beginTouch(bus);
-    ESP_LOGI(TAG, "TFT %dx%d at %d MHz, %d-row bands", W, H, CONFIG_NANO_TFT_SPI_MHZ, kRows);
+    char list[64]; int k = 0;
+    for (int i = 0; i <= s_nBands; i++) k += snprintf(list + k, sizeof list - k, "%s%d", i ? "/" : "", s_band[i]);
+    ESP_LOGI(TAG, "TFT %dx%d at %d MHz, bands at %s", W, H, CONFIG_NANO_TFT_SPI_MHZ, list);
     return true;
 }
 
@@ -145,8 +157,8 @@ int height() { return H; }
 
 void present(const ui::Model& m)
 {
-    for (int b = 0; b < kBands; b++) {
-        const int y = b * kRows, rows = y + kRows > H ? H - y : kRows;
+    for (int b = 0; b < s_nBands; b++) {
+        const int y = s_band[b], rows = s_band[b + 1] - y;
         xSemaphoreTake(s_free, portMAX_DELAY);      // a buffer that's off the wire
         uint16_t* px = s_buf[s_next];
         gfx::Frame f(px, W, H, rows, false, true);

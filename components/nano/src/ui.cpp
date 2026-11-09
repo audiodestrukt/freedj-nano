@@ -195,6 +195,17 @@ void color(Surface& s, const Model& m)
 
 } // namespace
 
+int sections(int w, int h, int* edges, int max)
+{
+    if (max < 2) return 0;
+    if (w < 240 || h <= 64) { edges[0] = 0; edges[1] = h; return 2; }
+    const Layout l = colorLayout(h);
+    const int e[] = {0, l.wave0, l.wave1, l.btn0, h};
+    int n = 0;
+    for (int v : e) if (n < max) edges[n++] = v;
+    return n;
+}
+
 void draw(Surface& s, const Model& m)
 {
     s.fill(0, 0, s.width(), s.height(), kBg);

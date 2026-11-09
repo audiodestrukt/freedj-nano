@@ -2,6 +2,15 @@
 
 Newest first. Each entry lists what changed, then the budget measured at that point.
 
+## 2026-11-09: one transfer for the waveform
+
+- TFT bands follow the layout's sections (`ui::sections`: header and time / waveform / overview /
+  buttons) instead of fixed 48-row strips, so the scrolling waveform reaches the panel in one
+  transfer. Split into strips, its bottom strip arrived about a panel refresh after the top and
+  showed as a ghost copy at the bottom. Band buffers 2 x 60 KB (were 2 x 30 KB).
+- Budget (XIAO, 3.2"): UI 13.0 ms playing (was 18.6: fewer transfers), 28.5 fps; free heap
+  290 KB (was 352).
+
 ## 2026-11-08 (late): fonts, DJ2Go over the bridge
 
 - The color layouts use proportional fonts: Adobe Helvetica from X11 in u8g2's compressed

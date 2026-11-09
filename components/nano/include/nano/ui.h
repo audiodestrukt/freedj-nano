@@ -25,6 +25,11 @@ struct Model {
 
 void draw(gfx::Surface& s, const Model& m);
 
+// Where the color layout's sections start (rows, ascending, first 0, last h), so a
+// banded display can send each section, above all the waveform, in one transfer: a
+// section split across transfers tears (its parts reach the panel a refresh apart).
+int sections(int w, int h, int* edges, int max);
+
 // Touch on the color layouts: buttons along the bottom, drag on the waveform
 // to scratch (JogTouch + Jog), tap a row in the list to load it.
 class Touch {
