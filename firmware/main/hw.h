@@ -14,6 +14,7 @@ namespace audio {   // audio.cpp: I2S out to a PCM5102A (no MCLK: tie its SCK to
 bool begin(uint32_t rate);
 void setRate(uint32_t rate);                 // audio task, between blocks
 void write(const int16_t* stereo, int frames);   // blocks on the DMA
+uint32_t underruns();                        // DMA buffers that went out unfilled (dropouts) since the last call
 }
 
 namespace tracks {  // tracks.cpp: the `tracks` flash partition, memory-mapped

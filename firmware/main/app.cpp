@@ -39,6 +39,8 @@ static bool s_browsing, s_keyUsed;
 static int s_browseAcc;
 static dj2go::Decoder s_dj;
 static volatile int64_t s_busyUs, s_audioFrames;
+static volatile int32_t s_maxBlockUs;           // slowest render() since the last report
+static uint32_t s_underrunTotal;
 
 static deck::Event make(Type t, bool pressed = true, int16_t delta = 0, float pos = 0)
 {
@@ -177,7 +179,9 @@ static void audioTask(void*)
         audio::setRate(s_deck->rate());
         const int64_t t0 = esp_timer_get_time();
         s_deck->render(buf, nano::Deck::kBlock);
-        s_busyUs += esp_timer_get_time() - t0;
+        const int32_t us = (int32_t)(esp_timer_get_time() - t0);
+        s_busyUs += us;
+        if (us > s_maxBlockUs) s_maxBlockUs = us;
         s_audioFrames += nano::Deck::kBlock;
         audio::write(buf, nano::Deck::kBlock);
     }
@@ -236,12 +240,17 @@ extern "C" void app_main()
             nextStat = now + 2000000;
             const nano::DeckStatus st = s_deck->status();
             const int64_t frames = s_audioFrames, busy = s_busyUs;
-            s_audioFrames = 0; s_busyUs = 0;
+            const int32_t maxUs = s_maxBlockUs;
+            s_audioFrames = 0; s_busyUs = 0; s_maxBlockUs = 0;
+            const uint32_t under = audio::underruns();
+            s_underrunTotal += under;
+            const int64_t blockUs = st.rate ? (int64_t)nano::Deck::kBlock * 1000000 / st.rate : 1;
             const int64_t audioUs = st.rate ? frames * 1000000 / st.rate : 0;
-            ESP_LOGI(TAG, "%s t%d %.1f s %+.1f %% | audio %.1f %% of the core (%s), ui %.1f ms x %d, %u KB/frame, free heap %u (min %u)",
+            ESP_LOGI(TAG, "%s t%d %.1f s %+.1f %% | audio %.1f %% of the core, worst block %.0f %% (%s), dropouts %u (total %u) | ui %.1f ms x %d, %u KB/frame, free heap %u (min %u)",
                      st.playing ? "PLAY" : st.cueing ? "CUE" : "stop", st.track + 1,
                      st.rate ? (double)(st.posQ16 >> 16) / st.rate : 0.0, st.pitchPermille / 10.0,
-                     audioUs ? 100.0 * busy / audioUs : 0.0, st.stretching ? "keylock" : "varispeed",
+                     audioUs ? 100.0 * busy / audioUs : 0.0, 100.0 * maxUs / blockUs, st.stretching ? "keylock" : "varispeed",
+                     (unsigned)under, (unsigned)s_underrunTotal,
                      uiFrames ? uiUs / 1000.0 / uiFrames : 0.0, uiFrames,
                      (unsigned)(uiFrames ? display::sentBytes() / 1024 / uiFrames : 0),
                      (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT),

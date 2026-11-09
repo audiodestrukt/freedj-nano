@@ -110,6 +110,7 @@ bring-up; storage is the first thing to grow (see the roadmap).
 | App image | 269 KB (82 % of the partition free) | 312 KB |
 | Static RAM (DIRAM) | 69 KB of 452 KB | 79 KB |
 | Audio CPU, 22.05 kHz mono | stopped 0.5 %, playing 1.4 %, **keylock 5.0 %** (XIAO, 160 MHz) | |
+| Audio CPU, 44.1 kHz stereo | playing 3.1 %, **keylock 16.4 %, worst block 34 % of its deadline, 0 dropouts** (with the TFT at ~43 fps) | |
 | Free heap while playing | 424 KB | |
 
 The firmware prints a budget line every 2 s: audio % of the core (and which engine), UI ms per

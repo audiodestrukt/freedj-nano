@@ -5,6 +5,7 @@
 
     tools/pack_tracks.py music/*.mp3 -o tracks.bin            # 22.05 kHz mono (default)
     tools/pack_tracks.py a.wav b.flac --rate 32000 --stereo -o tracks.bin
+    tools/pack_tracks.py a.mp3@44100s b.mp3 -o tracks.bin     # per file: @RATE, s stereo / m mono
     esptool --chip esp32c6 write-flash 0x180000 tracks.bin    # offset from firmware/partitions.csv
 
 Decodes anything ffmpeg reads. Format: components/nano/include/nano/library.h.
@@ -47,26 +48,32 @@ def main():
 
     tracks = []
     used = 8
-    for f in a.files:
-        pcm = decode(f, a.rate, ch)
-        pk = peaks(pcm, a.rate, ch)
+    for spec in a.files:
+        f, rate, fch = spec, a.rate, ch
+        if "@" in spec:                                   # file@44100s: rate and channels for this file
+            f, opt = spec.rsplit("@", 1)
+            fch = 2 if opt.endswith("s") else 1 if opt.endswith("m") else ch
+            rate = int(opt.rstrip("sm"))
+        pcm = decode(f, rate, fch)
+        pk = peaks(pcm, rate, fch)
         need = 64 + len(pcm) + len(pk) + 4
         if used + need > a.size:
             print(f"skip {f}: {need // 1024} KB doesn't fit ({(a.size - used) // 1024} KB left)")
             continue
         used += need
         name = os.path.splitext(os.path.basename(f))[0][:39]
-        tracks.append((name, pcm, pk))
-        print(f"{len(tracks):02d} {name}: {len(pcm) // 2 // ch / a.rate:.1f} s, {len(pcm) // 1024} KB")
+        tracks.append((name, pcm, pk, rate, fch))
+        print(f"{len(tracks):02d} {name}: {rate} Hz {'stereo' if fch == 2 else 'mono'}, "
+              f"{len(pcm) // 2 // fch / rate:.1f} s, {len(pcm) // 1024} KB")
 
     head = bytearray(b"FDJN" + struct.pack("<HH", 1, len(tracks)) + bytes(64 * len(tracks)))
     body = bytearray(head)
-    for i, (name, pcm, pk) in enumerate(tracks):
+    for i, (name, pcm, pk, rate, ch) in enumerate(tracks):
         while len(body) % 4: body.append(0)
         off = len(body); body += pcm
         poff = len(body); body += pk
         entry = name.encode("utf-8")[:39].ljust(40, b"\0") + struct.pack(
-            "<IIIB3xII", off, len(pcm) // 2 // ch, a.rate, ch, poff, len(pk))
+            "<IIIB3xII", off, len(pcm) // 2 // ch, rate, ch, poff, len(pk))
         body[8 + 64 * i: 8 + 64 * (i + 1)] = entry
     with open(a.out, "wb") as fh:
         fh.write(body)

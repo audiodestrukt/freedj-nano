@@ -2,6 +2,17 @@
 
 Newest first. Each entry lists what changed, then the budget measured at that point.
 
+## 2026-11-09 (later): dropout monitor, keylock at 44.1 kHz stereo
+
+- The budget line counts **dropouts** (I2S DMA buffers that went out unfilled: the driver's
+  send-queue-overflow event) and the **worst block**: the slowest render of the last 2 s as a
+  share of the block's deadline (256 frames: 5.8 ms at 44.1 kHz). Over 100 % is a dropout.
+- `pack_tracks.py`: per-file rate and channels (`file@44100s`), so one pack can mix qualities.
+- Budget (XIAO, 160 MHz, 3.2" TFT running): **keylock at 44.1 kHz stereo 16.4 % of the core,
+  worst block 30-34 % of its deadline, 0 dropouts** (+3.9 % and -7.9 %); varispeed 3.1 %, worst
+  4 %. At 22.05 kHz mono keylock is 5.0 %. The UI drops from 53 to ~43 fps while keylock runs at
+  44.1 kHz (they share the core; audio has priority).
+
 ## 2026-11-09 (later): IPS voltages, 53 fps, fps meter
 
 - **The waveform's shadows were the panel's voltages.** The ILI9341 driver's defaults are for
