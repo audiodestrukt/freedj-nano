@@ -36,11 +36,14 @@ static constexpr int kRows = 96;                    // the largest band (the wav
 static constexpr int kMaxBands = 16;
 static int s_band[kMaxBands + 1], s_nBands;         // band edges: the layout's sections, split to <= kRows
 static esp_lcd_panel_handle_t s_panel;
+static esp_lcd_panel_io_handle_t s_io;
 static esp_lcd_touch_handle_t s_touch;
 static uint16_t* s_buf[2];
 static int s_next;
 static SemaphoreHandle_t s_free;          // counts band buffers not on the wire
-static uint32_t s_hash[kMaxBands];
+static uint32_t s_hash[H];       // per row: only rows whose pixels changed are sent
+static uint32_t s_sentBytes;
+static bool s_sendAll;           // diagnostic: send every band every frame (console 'a')
 
 #if CONFIG_NANO_DISPLAY_ST7796
 // The ST7796 runs on the ILI9341 driver with its own init sequence (from
@@ -69,6 +72,36 @@ static bool IRAM_ATTR onDone(esp_lcd_panel_io_handle_t, esp_lcd_panel_io_event_d
     xSemaphoreGiveFromISR(s_free, &woke);
     return woke == pdTRUE;
 }
+
+// The ILI9341's power and VCOM settings. The driver's defaults are for TN panels: on the
+// 3.2" IPS module (ILI9341V) they left sharp shadows of the moving waveform in the rows
+// below it; the IPS values cleared them (2026-11-09). IPS panels (CONFIG_NANO_TFT_INVERT)
+// get them at boot; the console's i / v / V / f keys tune them live.
+#if CONFIG_NANO_DISPLAY_ILI9341
+struct Preset { const char* name; uint8_t c0, c1, c5a, c5b, c7; };
+static const Preset kPresets[] = {
+    {"driver default", 0x23, 0x11, 0x43, 0x4C, 0xA0},
+    {"Adafruit",       0x23, 0x10, 0x3E, 0x28, 0x86},
+    {"IPS",            0x13, 0x13, 0x22, 0x35, 0xBD},
+};
+static const uint8_t kFrameRates[] = {0x1B, 0x18, 0x13, 0x10};   // B1 RTNA: 70, 79, 100, 119 Hz
+static const int kHz[] = {70, 79, 100, 119};
+static int s_preset, s_fr;
+static int s_vcom = 0xA0;
+
+static void send(uint8_t cmd, const uint8_t* d, int n) { esp_lcd_panel_io_tx_param(s_io, cmd, d, n); }
+
+static void applyPreset(int i)
+{
+    s_preset = i;
+    const Preset& p = kPresets[i];
+    send(0xC0, &p.c0, 1); send(0xC1, &p.c1, 1);
+    const uint8_t c5[2] = {p.c5a, p.c5b}; send(0xC5, c5, 2);
+    s_vcom = p.c7;
+    const uint8_t c7 = (uint8_t)s_vcom; send(0xC7, &c7, 1);
+}
+
+#endif
 
 static void beginTouch(i2c_master_bus_handle_t bus)
 {
@@ -115,6 +148,7 @@ bool begin(i2c_master_bus_handle_t bus)
     ioc.trans_queue_depth = 4; ioc.lcd_cmd_bits = 8; ioc.lcd_param_bits = 8;
     ioc.on_color_trans_done = onDone;
     if (esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)SPI2_HOST, &ioc, &io) != ESP_OK) return false;
+    s_io = io;
 
     esp_lcd_panel_dev_config_t pc = {};
     pc.reset_gpio_num = board::TFT_RST;
@@ -129,6 +163,9 @@ bool begin(i2c_master_bus_handle_t bus)
     esp_lcd_panel_init(s_panel);
 #if CONFIG_NANO_TFT_INVERT
     esp_lcd_panel_invert_color(s_panel, true);
+#if CONFIG_NANO_DISPLAY_ILI9341
+    applyPreset(2);                                  // IPS voltages
+#endif
 #endif
     esp_lcd_panel_swap_xy(s_panel, true);           // landscape, header on the left (as freedj-esp)
     esp_lcd_panel_mirror(s_panel, true, true);
@@ -164,15 +201,46 @@ void present(const ui::Model& m)
         gfx::Frame f(px, W, H, rows, false, true);
         f.setBand(y);
         ui::draw(f, m);
-        uint32_t h = 2166136261u;                   // FNV-1a over the band
-        const uint32_t* w32 = (const uint32_t*)px;
-        for (int i = 0; i < W * rows / 2; i++) h = (h ^ w32[i]) * 16777619u;
-        if (h == s_hash[b]) { xSemaphoreGive(s_free); continue; }
-        s_hash[b] = h;
-        esp_lcd_panel_draw_bitmap(s_panel, 0, y, W, y + rows, px);   // onDone gives the buffer back
+        // FNV-1a per row; send the span from the first to the last changed row
+        int first = -1, last = -1;
+        for (int r = 0; r < rows; r++) {
+            uint32_t h = 2166136261u;
+            const uint32_t* w32 = (const uint32_t*)(px + r * W);
+            for (int i = 0; i < W / 2; i++) h = (h ^ w32[i]) * 16777619u;
+            if (h != s_hash[y + r] || s_sendAll) { s_hash[y + r] = h; if (first < 0) first = r; last = r; }
+        }
+        if (first < 0) { xSemaphoreGive(s_free); continue; }
+        esp_lcd_panel_draw_bitmap(s_panel, 0, y + first, W, y + last + 1, px + first * W);   // onDone gives the buffer back
+        s_sentBytes += (last - first + 1) * W * 2;
         s_next ^= 1;
     }
 }
+
+void tune(char key)
+{
+#if CONFIG_NANO_DISPLAY_ILI9341
+    if (!s_io) return;
+    if (key == 'R') { memset(s_hash, 0xFF, sizeof s_hash); ESP_LOGI(TAG, "repaint all bands once"); return; }
+    if (key == 'a') { s_sendAll = !s_sendAll; ESP_LOGI(TAG, "send every band: %s", s_sendAll ? "on" : "off"); return; }
+    if (key == 'i') {
+        applyPreset((s_preset + 1) % (int)(sizeof kPresets / sizeof kPresets[0]));
+    } else if (key == 'v' || key == 'V') {
+        s_vcom += key == 'V' ? 4 : -4;
+        s_vcom = s_vcom < 0x80 ? 0x80 : s_vcom > 0xFF ? 0xFF : s_vcom;   // 0x80..0xFF: VCOM offset -63..+63
+    } else if (key == 'f') {
+        s_fr = (s_fr + 1) % 4;
+        const uint8_t b1[2] = {0x00, kFrameRates[s_fr]}; send(0xB1, b1, 2);
+    }
+    const uint8_t c7 = (uint8_t)s_vcom; send(0xC7, &c7, 1);
+    const Preset& p = kPresets[s_preset];
+    ESP_LOGI(TAG, "panel: %s (C0 %02X C1 %02X C5 %02X %02X), VCOM2 C7 %02X, %d Hz",
+             p.name, p.c0, p.c1, p.c5a, p.c5b, s_vcom, kHz[s_fr]);
+#else
+    (void)key;
+#endif
+}
+
+uint32_t sentBytes() { uint32_t b = s_sentBytes; s_sentBytes = 0; return b; }
 
 bool touch(bool& down, int& x, int& y)
 {

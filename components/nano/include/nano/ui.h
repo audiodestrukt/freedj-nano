@@ -19,6 +19,7 @@ struct Model {
     int  tracks = 0;
     int  selected = 0;                    // browse cursor
     bool browsing = false;                // show the track list
+    int  fps = -1;                        // shown in the header when >= 0
     const char* (*nameOf)(int i, void* ctx) = nullptr;
     void* ctx = nullptr;
 };

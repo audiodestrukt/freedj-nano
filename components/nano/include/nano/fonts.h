@@ -11,8 +11,8 @@ namespace gfx {
 struct Font { const uint8_t* data; };
 
 extern const Font kHelvR10;      // ~10 px: small labels
-extern const Font kHelvB12;      // list rows
-extern const Font kHelvB14;      // header, buttons, tempo
-extern const Font kHelvB24Num;   // the big time: digits and + , - . / : only
+extern const Font kHelvR12;      // list rows
+extern const Font kHelvR14;      // header, buttons, tempo
+extern const Font kHelvR24Num;   // the big time: digits and + , - . / : only
 
 } // namespace gfx

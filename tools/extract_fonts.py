@@ -15,9 +15,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "firmware/managed_components/u8g2/csrc/u8g2_fonts.c")
 FONTS = {   # our name: u8g2 name
     "kHelvR10": "u8g2_font_helvR10_tr",
-    "kHelvB12": "u8g2_font_helvB12_tr",
-    "kHelvB14": "u8g2_font_helvB14_tr",
-    "kHelvB24Num": "u8g2_font_helvB24_tn",   # digits and + , - . / :
+    "kHelvR12": "u8g2_font_helvR12_tr",
+    "kHelvR14": "u8g2_font_helvR14_tr",
+    "kHelvR24Num": "u8g2_font_helvR24_tn",   # digits and + , - . / :
 }
 
 src = open(SRC, encoding="latin-1").read()

@@ -98,6 +98,8 @@ void present(const ui::Model& m)
 }
 
 bool touch(bool&, int&, int&) { return false; }
+void tune(char) {}
+uint32_t sentBytes() { return 0; }
 
 } // namespace display
 
@@ -109,6 +111,8 @@ int width() { return 0; }
 int height() { return 0; }
 void present(const ui::Model&) {}
 bool touch(bool&, int&, int&) { return false; }
+void tune(char) {}
+uint32_t sentBytes() { return 0; }
 }
 
 #endif

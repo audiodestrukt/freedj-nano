@@ -45,4 +45,6 @@ int  width();
 int  height();
 void present(const ui::Model& m);
 bool touch(bool& down, int& x, int& y);      // false: no touch panel
+void tune(char key);                         // TFT panel voltages from the console (i, v, V, f)
+uint32_t sentBytes();                        // bytes sent to the panel since the last call
 }

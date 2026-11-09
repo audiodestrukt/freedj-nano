@@ -160,7 +160,8 @@ static void console()
         case 'j': s_deck->post(make(Type::Jog, false, -8)); break;
         case 'J': s_deck->post(make(Type::Jog, false, 8)); break;
         case 'l': s_browsing = !s_browsing; break;
-        case '?': ESP_LOGI(TAG, "keys: p play, c cue, k keylock, +/- tempo, 0 reset, r range, n/b track, j/J jog, l list"); break;
+        case 'i': case 'v': case 'V': case 'f': case 'R': case 'a': display::tune((char)buf[i]); break;
+        case '?': ESP_LOGI(TAG, "keys: p play, c cue, k keylock, +/- tempo, 0 reset, r range, n/b track, j/J jog, l list, i/v/V/f panel tuning, R repaint, a send all"); break;
         default: break;
         }
     }
@@ -205,9 +206,10 @@ extern "C" void app_main()
     ui::Touch touch;
     ui::Model m;
     m.nameOf = nameOf;
-    const int uiPeriodMs = display::width() >= 240 ? 33 : 50;
+    const int uiPeriodMs = display::width() >= 240 ? 16 : 50;   // TFT: as fast as SPI allows, up to ~60 fps
     int64_t nextUi = 0, nextStat = esp_timer_get_time() + 2000000, uiUs = 0;
-    int uiFrames = 0;
+    int uiFrames = 0, fpsFrames = 0;
+    int64_t fpsStart = esp_timer_get_time();
     for (;;) {
         controls();
         console();
@@ -227,7 +229,8 @@ extern "C" void app_main()
             m.track = s_trackIdx >= 0 ? &s_track : nullptr;
             m.tracks = s_lib.count(); m.selected = s_selected; m.browsing = s_browsing;
             display::present(m);
-            uiUs += esp_timer_get_time() - now; uiFrames++;
+            uiUs += esp_timer_get_time() - now; uiFrames++; fpsFrames++;
+            if (now - fpsStart >= 1000000) { m.fps = (int)(fpsFrames * 1000000LL / (now - fpsStart)); fpsFrames = 0; fpsStart = now; }
         }
         if (now >= nextStat) {   // budget line, as freedj-esp's every-2-s report
             nextStat = now + 2000000;
@@ -235,11 +238,12 @@ extern "C" void app_main()
             const int64_t frames = s_audioFrames, busy = s_busyUs;
             s_audioFrames = 0; s_busyUs = 0;
             const int64_t audioUs = st.rate ? frames * 1000000 / st.rate : 0;
-            ESP_LOGI(TAG, "%s t%d %.1f s %+.1f %% | audio %.1f %% of the core (%s), ui %.1f ms x %d, free heap %u (min %u)",
+            ESP_LOGI(TAG, "%s t%d %.1f s %+.1f %% | audio %.1f %% of the core (%s), ui %.1f ms x %d, %u KB/frame, free heap %u (min %u)",
                      st.playing ? "PLAY" : st.cueing ? "CUE" : "stop", st.track + 1,
                      st.rate ? (double)(st.posQ16 >> 16) / st.rate : 0.0, st.pitchPermille / 10.0,
                      audioUs ? 100.0 * busy / audioUs : 0.0, st.stretching ? "keylock" : "varispeed",
                      uiFrames ? uiUs / 1000.0 / uiFrames : 0.0, uiFrames,
+                     (unsigned)(uiFrames ? display::sentBytes() / 1024 / uiFrames : 0),
                      (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT),
                      (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT));
             uiUs = 0; uiFrames = 0;

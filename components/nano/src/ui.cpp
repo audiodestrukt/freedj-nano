@@ -127,7 +127,7 @@ void list(Surface& s, const Model& m, int y0, int rowH, int scale, bool color)
         if (sel) s.fill(0, y, s.width(), rowH, color ? kBar : kText);
         char b[48];
         snprintf(b, sizeof b, "%c%02d %s", loaded ? '>' : ' ', i + 1, m.nameOf ? m.nameOf(i, m.ctx) : "");
-        if (color) text(s, 6, y + (rowH - ascent(kHelvB12)) / 2, b, kText, kHelvB12);
+        if (color) text(s, 6, y + (rowH - ascent(kHelvR12)) / 2, b, kText, kHelvR12);
         else text(s, 2, y + (rowH - 8 * scale) / 2, b, sel ? kBg : kText, scale);
     }
 }
@@ -167,7 +167,7 @@ void button(Surface& s, int i, int n, int y0, int h, const char* label, uint16_t
     if (!s.rows(y0, h)) return;
     const int w = s.width() / n, x = i * w + 3;
     if (on) s.fill(x, y0, w - 6, h, c); else frame(s, x, y0, w - 6, h, c);
-    text(s, x + (w - 6 - textWidth(label, kHelvB14)) / 2, y0 + (h - ascent(kHelvB14)) / 2, label, on ? kBg : c, kHelvB14);
+    text(s, x + (w - 6 - textWidth(label, kHelvR14)) / 2, y0 + (h - ascent(kHelvR14)) / 2, label, on ? kBg : c, kHelvR14);
 }
 
 void color(Surface& s, const Model& m)
@@ -177,11 +177,15 @@ void color(Surface& s, const Model& m)
     char b[48], t[16], p[12];
     s.fill(0, 0, W, l.head, kBar);
     snprintf(b, sizeof b, "%02d/%02d %s", m.st.track + 1, m.tracks, name(m));
-    text(s, 6, (l.head - ascent(kHelvB14)) / 2, b, kText, kHelvB14);
+    text(s, 6, (l.head - ascent(kHelvR14)) / 2, b, kText, kHelvR14);
+    if (m.fps >= 0) {
+        char f[16]; snprintf(f, sizeof f, "%d fps", m.fps);
+        text(s, W - textWidth(f, kHelvR10) - 6, (l.head - ascent(kHelvR10)) / 2, f, kDim, kHelvR10);
+    }
     if (m.browsing) { list(s, m, l.head, 24, 2, true); return; }
     fmtTime(t, sizeof t, m, true); fmtTempo(p, sizeof p, m);
-    text(s, 6, l.time + 2, t, kText, kHelvB24Num);
-    text(s, W - textWidth(p, kHelvB14) - 6, l.time + 2, p, kText, kHelvB14);
+    text(s, 6, l.time + 2, t, kText, kHelvR24Num);
+    text(s, W - textWidth(p, kHelvR14) - 6, l.time + 2, p, kText, kHelvR14);
     snprintf(b, sizeof b, "+-%d%%", m.st.rangePct);
     text(s, W - textWidth(b, kHelvR10) - 6, l.time + 20, b, kDim, kHelvR10);
     wave(s, m, 0, l.wave0, W, l.wave1 - l.wave0, 10, true);

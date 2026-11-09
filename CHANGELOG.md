@@ -2,6 +2,21 @@
 
 Newest first. Each entry lists what changed, then the budget measured at that point.
 
+## 2026-11-09 (later): IPS voltages, 53 fps, fps meter
+
+- **The waveform's shadows were the panel's voltages.** The ILI9341 driver's defaults are for
+  TN panels; on the 3.2" IPS module (ILI9341V) they left sharp copies of the moving waveform in
+  the rows below it (not power: same on 3V3; not the data path: same with every band re-sent).
+  IPS values (C0 13, C1 13, C5 22 35, C7 BD) cleared them; IPS panels (`NANO_TFT_INVERT`) get
+  them at boot. Console keys `i` / `v` / `V` / `f` tune power, VCOM and refresh live; `R` and
+  `a` are the repaint diagnostics. The values are a common IPS ILI9341V set, from memory: check
+  against the module vendor's init code. freedj-esp's A1S drives the same panel on the defaults.
+- Only rows that changed are sent (a hash per row, not per band): the header goes out as the
+  ~24 rows of the time instead of 60.
+- No 33 ms frame cap on the TFT: it runs as fast as SPI allows. fps shown in the header.
+- Budget (XIAO, 3.2", 40 MHz): **53 fps** playing (was 28.5), 61 KB per frame (the waveform is
+  60 KB: SPI is now the limit), UI 10.5 ms of CPU per frame; keylock 5.0 %; free heap 289 KB.
+
 ## 2026-11-09: one transfer for the waveform
 
 - TFT bands follow the layout's sections (`ui::sections`: header and time / waveform / overview /
