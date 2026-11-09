@@ -10,6 +10,8 @@
 //   PLAY, CUE       CDJ-style
 // Bench console (USB serial, no hardware needed): p play, c cue tap, k keylock,
 // + / - tempo 1 %, 0 tempo 0, r range, n / b next / previous track, j / J jog -/+, l list, ? help
+// MIDI from a controller on the computer (freedj-esp's tools/midi_bridge.py): 0x01 + a 4-byte
+// USB-MIDI packet, decoded with the DJ2Go map as if the controller were plugged in here.
 #include <stdio.h>
 #include "board.h"
 #include "esp_heap_caps.h"
@@ -129,10 +131,23 @@ static void console()
 #if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
     uint8_t buf[16];
     const int n = usb_serial_jtag_read_bytes(buf, sizeof buf, 0);
+    static uint8_t pkt[4];
+    static int pktN = -1;                          // -1: not in a bridge packet
     const nano::DeckStatus st = s_deck->status();
     const int perPct = 1000 / (2 * (st.rangePct ? st.rangePct : 8));   // fader units per 1 %
     for (int i = 0; i < n; i++) {
+        if (pktN >= 0) {                           // inside 0x01 + 4 bytes
+            pkt[pktN++] = buf[i];
+            if (pktN == 4) {
+                pktN = -1;
+                deck::Event ev[2];
+                const int k = s_dj.decodeUsbPacket(pkt, ev, 2);
+                for (int j = 0; j < k; j++) handle(ev[j], false);
+            }
+            continue;
+        }
         switch (buf[i]) {
+        case 0x01: pktN = 0; break;
         case 'p': s_deck->post(make(Type::PlayPause)); s_deck->post(make(Type::PlayPause, false)); break;
         case 'c': s_deck->post(make(Type::Cue)); s_deck->post(make(Type::Cue, false)); break;
         case 'k': s_deck->post(make(Type::KeyLock)); break;

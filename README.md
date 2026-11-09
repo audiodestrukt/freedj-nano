@@ -78,6 +78,7 @@ XSMT high, FMT low. Line out only; a headphone amp is a separate board.
 | PLAY, CUE | As on a CDJ: CUE while playing returns to the cue and pauses; CUE while paused sets the cue and previews while held; PLAY during a preview keeps playing |
 | Touch (TFT) | CUE / PLAY / KEY / LIST buttons; drag the waveform to scratch |
 | MIDI | The DJ2Go map: either deck's controls drive the one deck |
+| Controller on the computer | freedj-esp's `tools/midi_bridge.py --port /dev/ttyACM0` forwards a USB controller (the DJ2Go) over the serial port: 0x01 + a USB-MIDI packet, decoded with the DJ2Go map |
 | Serial console | Over the USB port, for the bench: `p` play, `c` cue (tap), `k` keylock, `+` / `-` tempo 1 %, `0` tempo 0, `r` range, `n` / `b` next / previous track, `j` / `J` jog, `l` list, `?` help. Keys sent while it boots are lost (opening the port resets the C6) |
 
 ## Build
