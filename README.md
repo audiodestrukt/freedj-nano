@@ -10,6 +10,8 @@ boots, maps the tracks, clocks I2S, and plays, cues and keylocks from the serial
 5 % of the core. The portable core passes its host tests (keylock pitch, speed and level,
 click-free transitions, the UI layouts); the firmware builds for three configs.
 
+Why it's built this way, the measurements and the wrong turns: [docs/DESIGN.md](docs/DESIGN.md).
+
 ## What's here
 
 | | |
