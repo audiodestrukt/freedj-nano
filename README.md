@@ -125,8 +125,11 @@ frame, free heap.
    the keylock's random access), or IMA ADPCM in the pack (4:1, block-wise so it stays
    seekable).
 3. **BLE-MIDI**, since the C6 has no USB host.
-4. Beetle ESP32-C6 pin map, then the smaller things: 1-bit and PWM audio (sigma-delta on a
-   pin), the C3/H2.
+4. **New chips** ([docs/TARGETS.md](docs/TARGETS.md)): the **RP2350** as the second real
+   target (two cores, memory-mapped flash, PIO I2S, USB host for rekordbox sticks), and the
+   **CH32V003** (10 cents, 2 KB RAM, PWM audio) as a how-small-can-it-go experiment. First
+   step: cross-compile the engine and count cycles per sample.
+5. Beetle ESP32-C6 pin map; the C3/H2.
 
 ## License
 
