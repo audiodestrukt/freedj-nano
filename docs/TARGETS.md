@@ -58,6 +58,8 @@ measurements decide)? Which board (Pico 2, or a smaller RP2350 board like the XI
 
 ## CH32V003: how small can a deck go
 
+The full plan: [DECK10C.md](DECK10C.md).
+
 The 10-cent chip that's already on the freedj control board (the CTRL PCB's I2C target). Not a
 practical deck, an experiment in how far the no-buffers design stretches. It overlaps with what
 was once going to be freedj-nano's "bit-banged" tier.
