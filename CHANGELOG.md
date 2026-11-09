@@ -2,6 +2,18 @@
 
 Newest first. Each entry lists what changed, then the budget measured at that point.
 
+## 2026-11-08 (late): fonts, DJ2Go over the bridge
+
+- The color layouts use proportional fonts: Adobe Helvetica from X11 in u8g2's compressed
+  format (10, 12, 14 px and 24 px digits), decoded by our own `gfx::text()` so they go
+  through the banded renderer like everything else. `tools/extract_fonts.py` copies them from
+  u8g2. The OLED layouts keep the 5x7 font.
+- MIDI from freedj-esp's `midi_bridge.py` over the USB console: the DJ2Go plugged into the
+  computer drives the XIAO.
+- `tools/build.sh` reconfigures before building, so new source files are picked up.
+- Budget (XIAO, 3.2"): UI 18.6 ms playing (17.6 before the fonts), 28 fps; image 317 KB (+6 KB
+  of fonts); free heap 352 KB.
+
 ## 2026-11-08 (night): the 3.2" TFT on the XIAO
 
 - `xiao_tft` config: the XIAO drives the ILI9341 TFT (SCK D8, MOSI D10, CS D3, DC D9, touch on

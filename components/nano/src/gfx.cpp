@@ -56,6 +56,85 @@ int text(Surface& s, int x, int y, const char* str, uint16_t c, int scale)
     return x;
 }
 
+// ---- u8g2 fonts ----------------------------------------------------------------
+// Format (u8g2_font.c): 23-byte header, then glyphs as [encoding][size][bitstream].
+// Bitstream, LSB first: width, height (unsigned), x, y, advance (signed, offset by
+// 2^(n-1)), then runs of background / foreground bits that wrap at the glyph width,
+// each pair followed by a 1-bit "repeat this pair" flag.
+
+namespace {
+struct Bits {
+    const uint8_t* p; uint8_t pos = 0;
+    unsigned get(uint8_t n) {
+        unsigned v = *p >> pos;
+        uint8_t end = pos + n;
+        if (end >= 8) { p++; v |= (unsigned)*p << (8 - pos); end -= 8; }
+        pos = end;
+        return v & ((1u << n) - 1);
+    }
+    int sget(uint8_t n) { return (int)get(n) - (1 << (n - 1)); }
+};
+
+const uint8_t* glyph(const uint8_t* f, uint8_t ch)
+{
+    const uint8_t* g = f + 23;
+    if (ch >= 'a') g += f[19] << 8 | f[20];
+    else if (ch >= 'A') g += f[17] << 8 | f[18];
+    for (; g[1]; g += g[1])
+        if (g[0] == ch) return g + 2;
+    return nullptr;
+}
+
+// Draws (or only measures, when s is null) one glyph with its baseline at y. Returns the advance.
+int drawGlyph(Surface* s, int x, int y, const uint8_t* f, const uint8_t* g, uint16_t c)
+{
+    Bits b{g};
+    const int w = b.get(f[4]), h = b.get(f[5]);
+    const int gx = b.sget(f[6]), gy = b.sget(f[7]), adv = b.sget(f[8]);
+    if (!s || !w) return adv;
+    const int x0 = x + gx, y0 = y - (h + gy);
+    if (!s->rows(y0, h)) return adv;
+    int lx = 0, ly = 0;
+    auto run = [&](unsigned len, bool fg) {
+        while (len) {
+            const unsigned n = len < (unsigned)(w - lx) ? len : (unsigned)(w - lx);
+            if (fg) s->fill(x0 + lx, y0 + ly, (int)n, 1, c);
+            len -= n; lx += n;
+            if (lx >= w) { lx = 0; ly++; }
+        }
+    };
+    while (ly < h) {
+        const unsigned a = b.get(f[2]), o = b.get(f[3]);
+        do { run(a, false); run(o, true); } while (b.get(1) && ly < h);
+    }
+    return adv;
+}
+} // namespace
+
+int ascent(const Font& f) { return (int8_t)f.data[13]; }
+int descent(const Font& f) { return -(int8_t)f.data[14]; }
+
+int text(Surface& s, int x, int y, const char* str, uint16_t c, const Font& f)
+{
+    const int base = y + ascent(f);
+    if (!s.rows(y, ascent(f) + descent(f) + 1)) return x + textWidth(str, f);
+    for (; *str; str++) {
+        const uint8_t* g = glyph(f.data, (uint8_t)*str);
+        if (g) x += drawGlyph(&s, x, base, f.data, g, c);
+    }
+    return x;
+}
+
+int textWidth(const char* str, const Font& f)
+{
+    int w = 0;
+    for (; *str; str++) {
+        const uint8_t* g = glyph(f.data, (uint8_t)*str);
+        if (g) w += drawGlyph(nullptr, 0, 0, f.data, g, 0);
+    }
+    return w;
+}
+
 void Frame::fill(int x, int y, int w, int h, uint16_t c)
 {
     if (x < 0) { w += x; x = 0; }

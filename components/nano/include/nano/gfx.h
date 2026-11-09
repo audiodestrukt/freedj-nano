@@ -11,6 +11,7 @@
 // identical on every backend.
 
 #include <stdint.h>
+#include "nano/fonts.h"
 
 namespace gfx {
 
@@ -34,6 +35,11 @@ void vline(Surface& s, int x, int y, int h, uint16_t c);
 void frame(Surface& s, int x, int y, int w, int h, uint16_t c);      // outline
 int  text(Surface& s, int x, int y, const char* str, uint16_t c, int scale = 1);   // returns the x after it
 inline int textWidth(const char* str, int scale = 1) { int n = 0; while (str[n]) n++; return n * 6 * scale; }
+// Proportional u8g2 fonts. `y` is the top of capitals (the baseline is y + ascent).
+int text(Surface& s, int x, int y, const char* str, uint16_t c, const Font& f);
+int textWidth(const char* str, const Font& f);
+int ascent(const Font& f);           // height of 'A'
+int descent(const Font& f);          // below the baseline, e.g. 'g' (positive)
 
 // RGB565 pixels in RAM covering rows [y0, y0 + rows) of a w x h screen: the
 // whole screen on the host, one band of it on a TFT. Pixels are stored

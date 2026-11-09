@@ -128,5 +128,6 @@ frame, free heap.
 ## License
 
 GPL-3.0-or-later, as freedj-esp. `deck_event` and `dj2go` are copied from freedj-esp
-(2026-11-08). u8g2 is BSD-2-Clause; the ST7796 init sequence is from Espressif's
+(2026-11-08). u8g2 is BSD-2-Clause; the Helvetica bitmap fonts in `fonts.cpp` are Adobe / DEC under the X11
+license; the ST7796 init sequence is from Espressif's
 esp_lcd_st7796 (Apache-2.0).

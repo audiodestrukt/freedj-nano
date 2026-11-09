@@ -10,7 +10,7 @@ docker run --rm -v "$ROOT":/repo -w /repo/firmware espressif/idf:release-v5.5 ba
   for c in $CONFIGS; do
     defs=sdkconfig.defaults; [ \$c = xiao_oled ] || defs=\"sdkconfig.defaults;sdkconfig.defaults.\$c\"
     echo \"== \$c\"
-    idf.py -B build_\$c -D SDKCONFIG=build_\$c/sdkconfig -D SDKCONFIG_DEFAULTS=\"\$defs\" build 2>&1 \
+    idf.py -B build_\$c -D SDKCONFIG=build_\$c/sdkconfig -D SDKCONFIG_DEFAULTS=\"\$defs\" reconfigure build 2>&1 \
       | grep -E '^/repo/(firmware/main|components).*: (error|warning)|binary size|Project build complete|FAILED' || true
     test -f build_\$c/freedj_nano.bin
   done
