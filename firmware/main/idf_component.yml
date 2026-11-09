@@ -1,0 +1,9 @@
+dependencies:
+  idf: ">=5.4"
+  espressif/esp_lcd_ili9341: "^2.0.1"
+  espressif/esp_lcd_touch_ft5x06: "^1.0.7"
+  # Mono OLED/LCD driver (SSD1306, SH1106, SSD1309, ST7567, ...): only the
+  # display_u8g2.cpp backend uses it. u8g2 registers itself as an IDF component.
+  u8g2:
+    git: https://github.com/olikraus/u8g2.git
+    version: "2.36.9"

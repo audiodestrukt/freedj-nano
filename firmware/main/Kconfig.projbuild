@@ -1,0 +1,61 @@
+menu "freedj-nano"
+
+choice NANO_BOARD
+    prompt "Board"
+    default NANO_BOARD_XIAO_C6
+    help
+        Pin maps are in main/board.h.
+config NANO_BOARD_XIAO_C6
+    bool "Seeed XIAO ESP32C6 (11 pins: mono display only)"
+config NANO_BOARD_DEVKIT_C6
+    bool "ESP32-C6-DevKitC-1 (TFT, pot, plain buttons)"
+endchoice
+
+choice NANO_DISPLAY
+    prompt "Display"
+    default NANO_DISPLAY_SSD1306_128X64
+config NANO_DISPLAY_SSD1306_128X64
+    bool "SSD1306 128x64 I2C OLED (0.96\")"
+config NANO_DISPLAY_SH1106_128X64
+    bool "SH1106 128x64 I2C OLED (1.3\")"
+config NANO_DISPLAY_SSD1306_128X32
+    bool "SSD1306 128x32 I2C OLED (0.91\")"
+config NANO_DISPLAY_ILI9341
+    bool "ILI9341 320x240 SPI TFT (2.8\" / 3.2\")"
+    depends on NANO_BOARD_DEVKIT_C6
+config NANO_DISPLAY_ST7796
+    bool "ST7796 480x320 SPI TFT (4\")"
+    depends on NANO_BOARD_DEVKIT_C6
+config NANO_DISPLAY_NONE
+    bool "None (headless)"
+endchoice
+
+config NANO_DISPLAY_U8G2
+    bool
+    default y if NANO_DISPLAY_SSD1306_128X64 || NANO_DISPLAY_SH1106_128X64 || NANO_DISPLAY_SSD1306_128X32
+config NANO_DISPLAY_TFT
+    bool
+    default y if NANO_DISPLAY_ILI9341 || NANO_DISPLAY_ST7796
+
+config NANO_TFT_INVERT
+    bool "Invert TFT colours (IPS panels, e.g. the Hosyond 2.8\")"
+    depends on NANO_DISPLAY_TFT
+    default y if NANO_DISPLAY_ILI9341
+config NANO_TFT_SPI_MHZ
+    int "TFT SPI clock (MHz)"
+    depends on NANO_DISPLAY_TFT
+    default 40
+config NANO_TOUCH_FT6336
+    bool "FT6336 capacitive touch on the I2C bus"
+    depends on NANO_DISPLAY_TFT
+    default y
+
+config NANO_MIDI_UART
+    bool "DIN/TRS MIDI in on a UART (31250 baud, needs an optocoupler)"
+    default y
+config NANO_TEMPO_POT
+    bool "Pitch pot on an ADC pin"
+    depends on NANO_BOARD_DEVKIT_C6
+    default y
+
+endmenu
