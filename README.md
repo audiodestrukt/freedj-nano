@@ -44,7 +44,13 @@ Rendered on the host by the tests (`build/tests/out/*.ppm`), from the same code 
 
 Pin maps are in `firmware/main/board.h`. **Not checked on hardware yet.**
 
-**Seeed XIAO ESP32C6** (`xiao_oled`, the default). 11 pins, so mono OLEDs only:
+**Seeed XIAO ESP32C6, with the 3.2" touch TFT** (`xiao_tft`): runs on the bench at 28.5 fps,
+17.6 ms per frame at 40 MHz SPI (the A1S manages 7 fps on the same panel: its screen lines are
+shared). The screen takes the encoder's pins, so touch does jog and browse: SCK D8, MOSI D10,
+CS D3, DC D9, touch SDA D4 / SCL D5; panel RST, LED and CTP_RST to 3V3, VCC to 5V; I2S BCK D1,
+LRCK D2, DIN **D6**; ladder D0; MIDI D7.
+
+**Seeed XIAO ESP32C6 with an OLED** (`xiao_oled`, the default): OLED + encoder:
 
 | Pin | Use |
 |---|---|
