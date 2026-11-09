@@ -5,10 +5,10 @@ little sibling of [freedj-esp](../freedj-esp), which needs two cores, an FPU and
 S3, A1S). The two repos share the deck's vocabulary (`deck::Event`, the DJ2Go map) but not
 the engine: everything here is fixed-point and allocation-free in the audio path.
 
-Status (2026-11-08): **builds, not run on hardware yet.** The portable core passes its host
-tests (keylock pitch, speed and level, click-free transitions, the UI layouts); the firmware
-builds for three configs. The first job on the bench is the budget line (audio CPU % with
-keylock on).
+Status (2026-11-08): **runs on the XIAO ESP32C6, not heard yet** (no DAC on the bench). It
+boots, maps the tracks, clocks I2S, and plays, cues and keylocks from the serial console at
+5 % of the core. The portable core passes its host tests (keylock pitch, speed and level,
+click-free transitions, the UI layouts); the firmware builds for three configs.
 
 ## What's here
 
@@ -72,6 +72,7 @@ XSMT high, FMT low. Line out only; a headphone amp is a separate board.
 | PLAY, CUE | As on a CDJ: CUE while playing returns to the cue and pauses; CUE while paused sets the cue and previews while held; PLAY during a preview keeps playing |
 | Touch (TFT) | CUE / PLAY / KEY / LIST buttons; drag the waveform to scratch |
 | MIDI | The DJ2Go map: either deck's controls drive the one deck |
+| Serial console | Over the USB port, for the bench: `p` play, `c` cue (tap), `k` keylock, `+` / `-` tempo 1 %, `0` tempo 0, `r` range, `n` / `b` next / previous track, `j` / `J` jog, `l` list, `?` help. Keys sent while it boots are lost (opening the port resets the C6) |
 
 ## Build
 
@@ -101,7 +102,8 @@ bring-up; storage is the first thing to grow (see the roadmap).
 |---|---|---|
 | App image | 269 KB (82 % of the partition free) | 312 KB |
 | Static RAM (DIRAM) | 69 KB of 452 KB | 79 KB |
-| Audio CPU, keylock on | not measured yet | |
+| Audio CPU, 22.05 kHz mono | stopped 0.5 %, playing 1.4 %, **keylock 5.0 %** (XIAO, 160 MHz) | |
+| Free heap while playing | 424 KB | |
 
 The firmware prints a budget line every 2 s: audio % of the core (and which engine), UI ms per
 frame, free heap.

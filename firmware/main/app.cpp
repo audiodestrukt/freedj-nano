@@ -8,6 +8,8 @@
 //   KEY + encoder   tempo (no pot) ; KEY tap: keylock on/off
 //   push / LIST     open the track list; in the list, encoder browses and push loads
 //   PLAY, CUE       CDJ-style
+// Bench console (USB serial, no hardware needed): p play, c cue tap, k keylock,
+// + / - tempo 1 %, 0 tempo 0, r range, n / b next / previous track, j / J jog -/+, l list, ? help
 #include <stdio.h>
 #include "board.h"
 #include "esp_heap_caps.h"
@@ -19,6 +21,10 @@
 #include "nano/deck.h"
 #include "nano/dj2go.h"
 #include "sdkconfig.h"
+#if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
+#include "driver/usb_serial_jtag.h"
+#include "driver/usb_serial_jtag_vfs.h"
+#endif
 
 static const char* TAG = "nano";
 using deck::Type;
@@ -104,6 +110,48 @@ static void controls()
     if (s.pot >= 0) { s_tempo = s.pot; s_deck->post(make(Type::TempoFader, false, 0, s.pot / 1000.0f)); }
 }
 
+static void setTempo(int fader)
+{
+    s_tempo = fader < 0 ? 0 : fader > 1000 ? 1000 : fader;
+    s_deck->post(make(Type::TempoFader, false, 0, s_tempo / 1000.0f));
+}
+
+static void consoleBegin()
+{
+#if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
+    usb_serial_jtag_driver_config_t c = USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();
+    if (usb_serial_jtag_driver_install(&c) == ESP_OK) usb_serial_jtag_vfs_use_driver();
+#endif
+}
+
+static void console()
+{
+#if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
+    uint8_t buf[16];
+    const int n = usb_serial_jtag_read_bytes(buf, sizeof buf, 0);
+    const nano::DeckStatus st = s_deck->status();
+    const int perPct = 1000 / (2 * (st.rangePct ? st.rangePct : 8));   // fader units per 1 %
+    for (int i = 0; i < n; i++) {
+        switch (buf[i]) {
+        case 'p': s_deck->post(make(Type::PlayPause)); s_deck->post(make(Type::PlayPause, false)); break;
+        case 'c': s_deck->post(make(Type::Cue)); s_deck->post(make(Type::Cue, false)); break;
+        case 'k': s_deck->post(make(Type::KeyLock)); break;
+        case '+': setTempo(s_tempo + perPct); break;
+        case '-': setTempo(s_tempo - perPct); break;
+        case '0': setTempo(500); break;
+        case 'r': s_deck->post(make(Type::TempoRange)); break;
+        case 'n': loadSelected((st.track + 1) % (s_lib.count() ? s_lib.count() : 1)); break;
+        case 'b': loadSelected(st.track > 0 ? st.track - 1 : 0); break;
+        case 'j': s_deck->post(make(Type::Jog, false, -8)); break;
+        case 'J': s_deck->post(make(Type::Jog, false, 8)); break;
+        case 'l': s_browsing = !s_browsing; break;
+        case '?': ESP_LOGI(TAG, "keys: p play, c cue, k keylock, +/- tempo, 0 reset, r range, n/b track, j/J jog, l list"); break;
+        default: break;
+        }
+    }
+#endif
+}
+
 static const char* nameOf(int i, void*) { nano::Track t; return s_lib.get(i, t) ? t.name : ""; }
 
 static void audioTask(void*)
@@ -135,6 +183,7 @@ extern "C" void app_main()
     if (!audio::begin(44100)) ESP_LOGE(TAG, "I2S failed");
     inputs::begin();
     midi_uart::begin();
+    consoleBegin();
     if (s_lib.count()) s_deck->post(make(Type::Load, true, 0));
     xTaskCreate(audioTask, "audio", 4096, nullptr, configMAX_PRIORITIES - 2, nullptr);
 
@@ -146,6 +195,7 @@ extern "C" void app_main()
     int uiFrames = 0;
     for (;;) {
         controls();
+        console();
         midi_uart::poll(onMidi);
         bool down; int x = 0, y = 0;
         if (display::touch(down, x, y)) {
@@ -170,7 +220,9 @@ extern "C" void app_main()
             const int64_t frames = s_audioFrames, busy = s_busyUs;
             s_audioFrames = 0; s_busyUs = 0;
             const int64_t audioUs = st.rate ? frames * 1000000 / st.rate : 0;
-            ESP_LOGI(TAG, "audio %.1f %% of the core (%s), ui %.1f ms x %d, free heap %u (min %u)",
+            ESP_LOGI(TAG, "%s t%d %.1f s %+.1f %% | audio %.1f %% of the core (%s), ui %.1f ms x %d, free heap %u (min %u)",
+                     st.playing ? "PLAY" : st.cueing ? "CUE" : "stop", st.track + 1,
+                     st.rate ? (double)(st.posQ16 >> 16) / st.rate : 0.0, st.pitchPermille / 10.0,
                      audioUs ? 100.0 * busy / audioUs : 0.0, st.stretching ? "keylock" : "varispeed",
                      uiFrames ? uiUs / 1000.0 / uiFrames : 0.0, uiFrames,
                      (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT),
