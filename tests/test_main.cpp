@@ -76,12 +76,12 @@ static void writeWav(const char* path, const int16_t* st, int frames, uint32_t r
     fwrite(st, 4, frames, f); fclose(f);
 }
 
-// A pack image in memory, in the format tools/pack_tracks.py writes.
-struct PackTrack { std::string name; std::vector<int16_t> pcm; uint32_t rate; uint8_t ch; };
+// A pack image in memory, in the format tools/pack_tracks.py writes (v2: 3-band peaks, BPM).
+struct PackTrack { std::string name; std::vector<int16_t> pcm; uint32_t rate; uint8_t ch; uint32_t bpmX100 = 0; };
 static std::vector<uint8_t> makePack(const std::vector<PackTrack>& ts)
 {
     std::vector<uint8_t> img(8 + 64 * ts.size(), 0);
-    memcpy(img.data(), "FDJN", 4); img[4] = 1; img[6] = (uint8_t)ts.size();
+    memcpy(img.data(), "FDJN", 4); img[4] = 2; img[6] = (uint8_t)ts.size();
     auto put32 = [&](size_t at, uint32_t v) { for (int i = 0; i < 4; i++) img[at + i] = (uint8_t)(v >> (8 * i)); };
     for (size_t k = 0; k < ts.size(); k++) {
         const PackTrack& t = ts[k];
@@ -90,16 +90,24 @@ static std::vector<uint8_t> makePack(const std::vector<PackTrack>& ts)
         const uint32_t off = (uint32_t)img.size();
         const uint8_t* p = (const uint8_t*)t.pcm.data();
         img.insert(img.end(), p, p + t.pcm.size() * 2);
+        // rough bands: one-pole low-pass at 200 Hz and 2 kHz
+        const float a1 = 1 - expf(-6.2831853f * 200 / t.rate), a2 = 1 - expf(-6.2831853f * 2000 / t.rate);
+        float l1 = 0, l2 = 0;
         const uint32_t poff = (uint32_t)img.size(), plen = (frames + bucket - 1) / bucket;
         for (uint32_t b = 0; b < plen; b++) {
-            int m = 0;
-            for (uint32_t f = b * bucket; f < (b + 1) * bucket && f < frames; f++)
-                for (int c = 0; c < t.ch; c++) m = std::max(m, abs((int)t.pcm[f * t.ch + c]));
-            img.push_back((uint8_t)std::min(255, m >> 7));
+            float m[3] = {0, 0, 0};
+            for (uint32_t f = b * bucket; f < (b + 1) * bucket && f < frames; f++) {
+                const float x = t.pcm[f * t.ch];
+                l1 += a1 * (x - l1); l2 += a2 * (x - l2);
+                const float v[3] = {fabsf(l1), fabsf(l2 - l1), fabsf(x - l2)};
+                for (int i = 0; i < 3; i++) m[i] = std::max(m[i], v[i]);
+            }
+            for (int i = 0; i < 3; i++) img.push_back((uint8_t)std::min(255.0f, m[i] / (i == 2 ? 20.0f : 40.0f)));
         }
         const size_t e = 8 + 64 * k;
-        strncpy((char*)&img[e], t.name.c_str(), 39);
-        put32(e + 40, off); put32(e + 44, frames); put32(e + 48, t.rate); img[e + 52] = t.ch;
+        strncpy((char*)&img[e], t.name.c_str(), 31);
+        put32(e + 32, t.bpmX100); put32(e + 36, 0);
+        put32(e + 40, off); put32(e + 44, frames); put32(e + 48, t.rate); img[e + 52] = t.ch; img[e + 53] = 1;
         put32(e + 56, poff); put32(e + 60, plen);
     }
     return img;
@@ -260,7 +268,7 @@ static const char* nameOf(int i, void* ctx) { Track t; return ((Library*)ctx)->g
 
 static void testUi()
 {
-    auto img = makePack({{"Kick Pad Loop", beat(22050, 20), 22050, 2}, {"Sine 441", sine(22050, 441, 5, 1), 22050, 1},
+    auto img = makePack({{"Kick Pad Loop", beat(22050, 20), 22050, 2, 12000}, {"Sine 441", sine(22050, 441, 5, 1), 22050, 1},
                          {"Third Track Name Long", beat(22050, 3), 22050, 2}});
     Library lib; lib.open(img.data(), img.size());
     Track t; lib.get(0, t);

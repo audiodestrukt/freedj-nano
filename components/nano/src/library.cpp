@@ -14,7 +14,9 @@ static uint16_t le16(const uint8_t* p) { return (uint16_t)(p[0] | p[1] << 8); }
 bool Library::open(const void* base, size_t size)
 {
     base_ = (const uint8_t*)base; size_ = size; count_ = 0;
-    if (!base_ || size < kHeader || memcmp(base_, "FDJN", 4) || le16(base_ + 4) != 1) return false;
+    if (!base_ || size < kHeader || memcmp(base_, "FDJN", 4)) return false;
+    version_ = le16(base_ + 4);
+    if (version_ != 1 && version_ != 2) return false;
     const int n = le16(base_ + 6);
     if (kHeader + (size_t)n * kEntry > size) return false;
     count_ = n;
@@ -27,9 +29,10 @@ bool Library::get(int i, Track& out) const
     const uint8_t* e = base_ + kHeader + (size_t)i * kEntry;
     const uint32_t off = le32(e + 40), frames = le32(e + 44), rate = le32(e + 48);
     const uint8_t ch = e[52];
+    const bool bands = version_ >= 2 && e[53] == 1;
     const uint32_t poff = le32(e + 56), plen = le32(e + 60);
-    if (e[39] != 0 || (ch != 1 && ch != 2) || off % 4) return false;
-    if ((uint64_t)off + (uint64_t)frames * ch * 2 > size_ || (uint64_t)poff + plen > size_) return false;
+    if (e[version_ >= 2 ? 31 : 39] != 0 || (ch != 1 && ch != 2) || off % 4) return false;
+    if ((uint64_t)off + (uint64_t)frames * ch * 2 > size_ || (uint64_t)poff + (uint64_t)plen * (bands ? 3 : 1) > size_) return false;
     out.name = (const char*)e;
     out.pcm.data = (const int16_t*)(base_ + off);
     out.pcm.frames = frames;
@@ -38,6 +41,9 @@ bool Library::get(int i, Track& out) const
     out.peaks = plen ? base_ + poff : nullptr;
     out.peaksLen = plen;
     out.peakBucket = plen ? (frames + plen - 1) / plen : 1;
+    out.bands = bands;
+    out.bpmX100 = version_ >= 2 ? le32(e + 32) : 0;
+    out.firstBeat = version_ >= 2 ? le32(e + 36) : 0;
     return true;
 }
 

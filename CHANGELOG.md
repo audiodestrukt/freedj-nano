@@ -2,6 +2,20 @@
 
 Newest first. Each entry lists what changed, then the budget measured at that point.
 
+## 2026-11-09 (evening): the CDJ-3000 look
+
+- Color layouts restyled after the CDJ-3000 play screen, in freedj-esp's palette: deck badge
+  and title; REMAIN time, TEMPO with an MT (master tempo = keylock) badge, BPM at the current
+  tempo; a beat-in-bar meter; the waveform in rekordbox's 3-band colours (lows blue, mids
+  orange, highs white; the played side dimmed) with beat ticks and red bar ticks and an orange
+  cue marker; the overview in the same colours with the played part greyed; key-style buttons
+  (CUE, PLAY/PAUSE, MT, LIST).
+- Pack format v2: name 32 bytes, then BPM x 100 and the first downbeat; peaks can be 3 bytes
+  per bucket (low < 200 Hz, mid, high > 2 kHz). v1 packs still load. `pack_tracks.py` filters the
+  bands and finds the BPM and downbeat (onset autocorrelation; `--bpm` overrides).
+- Budget (XIAO, 3.2"): 50 fps playing (was 53), UI 15.6 ms of CPU per frame (was 10.5: three
+  bands per column), still SPI-bound at 62 KB per frame; 0 dropouts.
+
 ## 2026-11-09 (later): dropout monitor, keylock at 44.1 kHz stereo
 
 - The budget line counts **dropouts** (I2S DMA buffers that went out unfilled: the driver's
