@@ -23,8 +23,9 @@ constexpr uint16_t cBg = hex(0x0B0D10), cPanel = hex(0x1A1E24), cText = hex(0xE8
 constexpr uint16_t cGreen = hex(0x2FBF71), cOrange = hex(0xF29D38), cBlue = hex(0x3D7EFF), cRed = hex(0xE0453A);
 constexpr uint16_t cKeyFace = hex(0x3A4658), cTick = hex(0xC8CCD2);
 // 3-band waveform (rekordbox / CDJ "3Band"): lows blue, mids orange, highs white; the played side dimmed
-constexpr uint16_t cLow = hex(0x2060F0), cMid = hex(0xF0A030), cHigh = hex(0xF4F4F4);
-constexpr uint16_t cLowP = hex(0x142E66), cMidP = hex(0x6A4818), cHighP = hex(0x6E6E6E);
+// (colours from freedj-3000's renderer)
+constexpr uint16_t cLow = hex(0x3A7BF0), cMid = hex(0xF0A030), cHigh = hex(0xF4F4F4);
+constexpr uint16_t cLowP = hex(0x1A3870), cMidP = hex(0x6A4818), cHighP = hex(0x6E6E6E);
 
 struct Layout {   // color layout rows, from the screen size
     int head, label, value, meter, wave0, wave1, over0, over1, btn0;
@@ -186,14 +187,13 @@ void tri(Surface& s, int cx, int y, int h, bool down, uint16_t c)   // a small m
     for (int i = 0; i < h; i++) { const int w = down ? h - i : i + 1; s.fill(cx - w + 1, y + i, 2 * w - 1, 1, c); }
 }
 
-// One column of the 3-band waveform: the tallest band first, so all three show.
+// One column of the 3-band waveform, layered as the CDJ-3000 (and freedj-3000) draws it:
+// lows outermost, mids over them, highs innermost in white.
 void bands3(Surface& s, int x, int mid, int half, const uint8_t* p, bool played)
 {
-    struct B { int a; uint16_t c; } b[3] = {
-        {p[0] * half / 255, played ? cLowP : cLow}, {p[1] * half / 255, played ? cMidP : cMid},
-        {p[2] * half / 255, played ? cHighP : cHigh}};
-    for (int i = 0; i < 2; i++) for (int j = i + 1; j < 3; j++) if (b[j].a > b[i].a) { B t = b[i]; b[i] = b[j]; b[j] = t; }
-    for (const B& v : b) if (v.a) s.fill(x, mid - v.a, 1, 2 * v.a, v.c);
+    const int a[3] = {p[0] * half / 255, p[1] * half / 255, p[2] * half / 255};
+    const uint16_t c[3] = {played ? cLowP : cLow, played ? cMidP : cMid, played ? cHighP : cHigh};
+    for (int i = 0; i < 3; i++) if (a[i]) s.fill(x, mid - a[i], 1, 2 * a[i], c[i]);
 }
 
 void maxBands(const nano::Track& t, int64_t b0, int nb, uint8_t out[3])

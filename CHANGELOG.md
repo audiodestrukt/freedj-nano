@@ -2,6 +2,19 @@
 
 Newest first. Each entry lists what changed, then the budget measured at that point.
 
+## 2026-11-09 (night): rekordbox data
+
+- `tools/rekordbox.py` reads a rekordbox USB export's analysis files (PIONEER/USBANLZ, per
+  Deep Symmetry's crate-digger spec): the audio path (PPTH), the beat grid (PQTZ) and the
+  CDJ-3000's 3-band scrolling waveform (PWV7 in .2EX, 150 columns per second). PWV7's byte
+  order (low, mid, high) isn't in the spec; correlating it against our own band filters on three
+  tracks settled it (byte 0 with low +0.68..+0.90, byte 2 with high +0.32..+0.57).
+- `pack_tracks.py --rekordbox STICK` uses that grid and waveform for files on the stick (else
+  it analyses as before), takes titles from the tags, and `--start` / `--length` cut a section so
+  long tracks fit in flash (the grid's first downbeat shifts with it).
+- 3-band waveform in freedj-3000's colours and layering (lows outermost, mids, highs innermost).
+- Tested with 2AR "Grip" (126 BPM) and MOKAY "MA BOOGIE" (128 BPM), 27 s each from 1:00.
+
 ## 2026-11-09 (evening): the CDJ-3000 look
 
 - Color layouts restyled after the CDJ-3000 play screen, in freedj-esp's palette: deck badge

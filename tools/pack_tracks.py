@@ -6,6 +6,8 @@
     tools/pack_tracks.py music/*.mp3 -o tracks.bin            # 22.05 kHz mono (default)
     tools/pack_tracks.py a.wav b.flac --rate 32000 --stereo -o tracks.bin
     tools/pack_tracks.py a.mp3@44100s b.mp3 -o tracks.bin     # per file: @RATE, s stereo / m mono
+    tools/pack_tracks.py --rekordbox /run/media/$USER/STICK --start 60 --length 25 STICK/Contents/a/b.mp3
+                         # rekordbox's beat grid and CDJ-3000 3-band waveform; 25 s from 1:00
     esptool --chip esp32c6 write-flash 0x180000 tracks.bin    # offset from firmware/partitions.csv
 
 Decodes anything ffmpeg reads. Format (v2): components/nano/include/nano/library.h.
@@ -13,7 +15,9 @@ Also works out, for the CDJ-style screen, a 3-band waveform (low < 200 Hz, mid, 
 blue, orange, white) and the BPM and first downbeat (onset autocorrelation; --bpm overrides).
 The partition is 2.5 MB: about 60 s of 22.05 kHz mono. Tracks that don't fit are left out.
 """
-import argparse, os, struct, subprocess, sys
+import argparse, json, os, struct, subprocess, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import rekordbox
 import numpy as np
 from scipy import signal
 
@@ -21,12 +25,48 @@ PEAK_MS = 10          # must match ui.cpp's kPeakMs
 PART_SIZE = 0x280000  # firmware/partitions.csv
 
 
-def decode(path, rate, ch):
-    r = subprocess.run(["ffmpeg", "-v", "error", "-i", path, "-f", "s16le", "-acodec", "pcm_s16le",
+def decode(path, rate, ch, start=0.0, length=None):
+    cut = ["-ss", str(start)] + (["-t", str(length)] if length else [])
+    r = subprocess.run(["ffmpeg", "-v", "error", *cut, "-i", path, "-f", "s16le", "-acodec", "pcm_s16le",
                         "-ar", str(rate), "-ac", str(ch), "-"], capture_output=True)
     if r.returncode:
         sys.exit(f"ffmpeg failed on {path}: {r.stderr.decode().strip()}")
     return r.stdout
+
+
+def title(path):
+    """'Title' from the file's tags, or the file name."""
+    r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format_tags=title,artist", "-of", "json", path],
+                       capture_output=True, text=True)
+    try:
+        tags = {k.lower(): v for k, v in json.loads(r.stdout)["format"]["tags"].items()}
+        if tags.get("title"): return tags["title"]
+    except (KeyError, ValueError):
+        pass
+    return os.path.splitext(os.path.basename(path))[0]
+
+
+def rb_waveform(t, rate, start, frames):
+    """rekordbox's PWV7 (150/s, low/mid/high) resampled to our 10 ms buckets, 0..255."""
+    eb, w = t["wave3"]
+    w = np.frombuffer(w, np.uint8).reshape(-1, eb)[:, :3].astype(np.float32)
+    n = (frames + rate * PEAK_MS // 1000 - 1) // (rate * PEAK_MS // 1000)
+    out = np.zeros((n, 3), np.float32)
+    per = rekordbox.WAVE_PER_SEC * PEAK_MS / 1000.0          # 1.5 entries per bucket
+    for b in range(n):
+        i0 = int((start * 1000 / PEAK_MS + b) * per); i1 = max(i0 + 1, int((start * 1000 / PEAK_MS + b + 1) * per))
+        if i0 < len(w): out[b] = w[i0:min(i1, len(w))].max(axis=0)
+    ref = np.percentile(out, 99, axis=0); ref[ref == 0] = 1
+    return np.clip(out / ref * 230, 0, 255).astype(np.uint8).tobytes()
+
+
+def rb_grid(t, rate, start):
+    """(bpm, first downbeat frame) from rekordbox's beat grid, for audio starting at `start` s."""
+    g = t.get("grid") or []
+    for beat, bpm100, ms in g:
+        if beat == 1 and ms >= start * 1000:
+            return bpm100 / 100.0, int(round((ms / 1000.0 - start) * rate))
+    return 0.0, 0
 
 
 def mono(pcm, ch):
@@ -89,9 +129,13 @@ def main():
     ap.add_argument("--stereo", action="store_true")
     ap.add_argument("--size", type=lambda s: int(s, 0), default=PART_SIZE, help="partition size")
     ap.add_argument("--bpm", type=float, help="force the BPM (all tracks) instead of detecting it")
+    ap.add_argument("--rekordbox", metavar="STICK", help="a rekordbox USB export: use its beat grids and waveforms")
+    ap.add_argument("--start", type=float, default=0.0, help="seconds into each track")
+    ap.add_argument("--length", type=float, help="seconds to keep of each track")
     a = ap.parse_args()
     ch = 2 if a.stereo else 1
 
+    rb = rekordbox.tracks(a.rekordbox) if a.rekordbox else {}
     tracks = []
     used = 8
     for spec in a.files:
@@ -100,21 +144,24 @@ def main():
             f, opt = spec.rsplit("@", 1)
             fch = 2 if opt.endswith("s") else 1 if opt.endswith("m") else ch
             rate = int(opt.rstrip("sm"))
-        pcm = decode(f, rate, fch)
+        pcm = decode(f, rate, fch, a.start, a.length)
         m = mono(pcm, fch)
-        pk = band_peaks(m, rate)
-        bpm, first = beat_grid(m, rate)
+        t = rb.get(os.path.relpath(os.path.abspath(f), os.path.abspath(a.rekordbox))) if rb else None
+        src = "rekordbox" if t and "wave3" in t else "analysed"
+        pk = rb_waveform(t, rate, a.start, len(m)) if src == "rekordbox" else band_peaks(m, rate)
+        bpm, first = rb_grid(t, rate, a.start) if t and t.get("grid") else beat_grid(m, rate)
         if a.bpm: bpm = a.bpm
         need = 64 + len(pcm) + len(pk) + 4
         if used + need > a.size:
             print(f"skip {f}: {need // 1024} KB doesn't fit ({(a.size - used) // 1024} KB left)")
             continue
         used += need
-        name = os.path.splitext(os.path.basename(f))[0][:31]
+        name = title(f).encode("utf-8")[:31].decode("utf-8", "ignore")
         tracks.append((name, pcm, pk, rate, fch, bpm, first))
         print(f"{len(tracks):02d} {name}: {rate} Hz {'stereo' if fch == 2 else 'mono'}, "
               f"{len(pcm) // 2 // fch / rate:.1f} s, {len(pcm) // 1024} KB, "
-              + (f"{bpm:.2f} BPM, first beat {first / rate:.3f} s" if bpm else "no beat grid"))
+              + (f"{bpm:.2f} BPM, first beat {first / rate:.3f} s" if bpm else "no beat grid")
+              + f" ({src})")
 
     head = bytearray(b"FDJN" + struct.pack("<HH", 2, len(tracks)) + bytes(64 * len(tracks)))
     body = bytearray(head)
