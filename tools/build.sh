@@ -4,7 +4,7 @@
 #   tools/build.sh devkit_tft      one (xiao_oled is the plain sdkconfig.defaults)
 set -e
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-CONFIGS=${*:-"xiao_oled devkit_tft devkit_tft4"}
+CONFIGS=${*:-"xiao_oled xiao_tft devkit_tft devkit_tft4"}
 docker run --rm -v "$ROOT":/repo -w /repo/firmware espressif/idf:release-v5.5 bash -c "
   set -e
   for c in $CONFIGS; do

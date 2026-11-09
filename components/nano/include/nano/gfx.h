@@ -24,6 +24,9 @@ public:
     virtual int  height() const = 0;
     virtual bool mono() const = 0;
     virtual void fill(int x, int y, int w, int h, uint16_t c) = 0;   // clipped by the backend
+    // Do rows [y, y + h) land in what's being drawn? A banded backend says no for rows
+    // outside the current band, so the UI skips work there (the layout runs once per band).
+    virtual bool rows(int y, int h) const { (void)y; (void)h; return true; }
 };
 
 void hline(Surface& s, int x, int y, int w, uint16_t c);
@@ -46,6 +49,7 @@ public:
     int height() const override { return h_; }
     bool mono() const override { return mono_; }
     void fill(int x, int y, int w, int h, uint16_t c) override;
+    bool rows(int y, int h) const override { return y < y0_ + rows_ && y + h > y0_; }
 private:
     uint16_t* px_;
     int w_, h_, rows_, y0_ = 0;

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // SPI TFTs (ILI9341 320x240, ST7796 480x320) with FT6336 touch, without LVGL.
 // No full frame buffer (a 320x240 frame is 150 KB of the C6's 512 KB): the UI
-// is drawn band by band into two 16-row DMA buffers, and a band goes over SPI
+// is drawn band by band into two 48-row DMA buffers (30 KB each at 320 wide), and a band goes over SPI
 // only if its pixels changed since the last frame (hash per band). A playing
 // deck mostly changes the waveform and the time, so most bands are skipped.
 #include "hw.h"
@@ -30,7 +30,7 @@ static constexpr int W = 320, H = 240;
 #else
 static constexpr int W = 480, H = 320;
 #endif
-static constexpr int kRows = 16, kBands = (H + kRows - 1) / kRows;
+static constexpr int kRows = 48, kBands = (H + kRows - 1) / kRows;
 static esp_lcd_panel_handle_t s_panel;
 static esp_lcd_touch_handle_t s_touch;
 static uint16_t* s_buf[2];

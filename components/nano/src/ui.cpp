@@ -68,6 +68,7 @@ uint8_t peakAt(const nano::Track& t, int64_t b0, int nb)
 // Zoomed waveform round the playhead (centre column); `msPerCol` sets the zoom.
 void wave(Surface& s, const Model& m, int x0, int y0, int w, int h, int msPerCol, bool color)
 {
+    if (!s.rows(y0, h)) return;
     const int mid = y0 + h / 2, cx = x0 + w / 2;
     if (m.track && m.track->peaks && m.st.rate) {
         const nano::Track& t = *m.track;
@@ -93,6 +94,7 @@ void wave(Surface& s, const Model& m, int x0, int y0, int w, int h, int msPerCol
 // The whole track across the width, with the position.
 void overview(Surface& s, const Model& m, int x0, int y0, int w, int h, bool color)
 {
+    if (!s.rows(y0, h)) return;
     if (!m.track || !m.st.frames) { frame(s, x0, y0, w, h, kDim); return; }
     const nano::Track& t = *m.track;
     const int px = (int)((m.st.posQ16 >> 16) * w / m.st.frames);
@@ -120,6 +122,7 @@ void list(Surface& s, const Model& m, int y0, int rowH, int scale, bool color)
     s.fill(0, y0, s.width(), s.height() - y0, kBg);
     for (int r = 0; r < rows && first + r < m.tracks; r++) {
         const int i = first + r, y = y0 + r * rowH;
+        if (!s.rows(y, rowH)) continue;
         const bool sel = i == m.selected, loaded = i == m.st.track;
         if (sel) s.fill(0, y, s.width(), rowH, color ? kBar : kText);
         char b[48];
@@ -160,6 +163,7 @@ void mono64(Surface& s, const Model& m)
 
 void button(Surface& s, int i, int n, int y0, int h, const char* label, uint16_t c, bool on)
 {
+    if (!s.rows(y0, h)) return;
     const int w = s.width() / n, x = i * w + 3;
     if (on) s.fill(x, y0, w - 6, h, c); else frame(s, x, y0, w - 6, h, c);
     text(s, x + (w - 6 - textWidth(label, 2)) / 2, y0 + (h - 16) / 2, label, on ? kBg : c, 2);

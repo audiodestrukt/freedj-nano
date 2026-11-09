@@ -6,7 +6,7 @@ choice NANO_BOARD
     help
         Pin maps are in main/board.h.
 config NANO_BOARD_XIAO_C6
-    bool "Seeed XIAO ESP32C6 (11 pins: mono display only)"
+    bool "Seeed XIAO ESP32C6 (11 pins: an OLED + encoder, or a TFT + touch without the encoder)"
 config NANO_BOARD_DEVKIT_C6
     bool "ESP32-C6-DevKitC-1 (TFT, pot, plain buttons)"
 endchoice
@@ -22,10 +22,8 @@ config NANO_DISPLAY_SSD1306_128X32
     bool "SSD1306 128x32 I2C OLED (0.91\")"
 config NANO_DISPLAY_ILI9341
     bool "ILI9341 320x240 SPI TFT (2.8\" / 3.2\")"
-    depends on NANO_BOARD_DEVKIT_C6
 config NANO_DISPLAY_ST7796
     bool "ST7796 480x320 SPI TFT (4\")"
-    depends on NANO_BOARD_DEVKIT_C6
 config NANO_DISPLAY_NONE
     bool "None (headless)"
 endchoice

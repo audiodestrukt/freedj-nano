@@ -2,6 +2,17 @@
 
 Newest first. Each entry lists what changed, then the budget measured at that point.
 
+## 2026-11-08 (night): the 3.2" TFT on the XIAO
+
+- `xiao_tft` config: the XIAO drives the ILI9341 TFT (SCK D8, MOSI D10, CS D3, DC D9, touch on
+  D4/D5), the encoder's pins go to the screen and I2S DOUT moves to D6.
+- The button ladder pin floated with nothing wired and held CUE at boot: internal pull-up.
+- Banded TFT updates: the layout skips anything outside the current band (it ran once per
+  band in full: 15x the work), bands 16 -> 48 rows (the waveform goes out in ~3 pieces, not 8:
+  less tearing, which showed as ghost copies of the scrolling waveform), SPI 20 -> 40 MHz.
+- Budget (XIAO, 3.2" ILI9341V): UI 31 -> 6.5 ms stopped, 45 -> 17.6 ms playing; 28.5 fps (the
+  33 ms UI period caps it); free heap 352 KB (two 30 KB band buffers); audio unchanged.
+
 ## 2026-11-08 (later): first run on the XIAO ESP32C6
 
 - Serial console over the USB port for the bench (`p`, `c`, `k`, `+`/`-`, `n`/`b`, `j`/`J`, ...).

@@ -43,6 +43,7 @@ void frame(Surface& s, int x, int y, int w, int h, uint16_t c)
 
 int text(Surface& s, int x, int y, const char* str, uint16_t c, int scale)
 {
+    if (!s.rows(y, 7 * scale)) return x + textWidth(str, scale);
     for (; *str; str++, x += 6 * scale) {
         uint8_t ch = (uint8_t)*str;
         if (ch < 32 || ch > 126) ch = '?';

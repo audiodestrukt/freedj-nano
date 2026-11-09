@@ -65,7 +65,13 @@ void begin()
         ESP_ERROR_CHECK(adc_oneshot_new_unit(&u, &s_adc));
         adc_oneshot_chan_cfg_t cc = {};
         cc.atten = ADC_ATTEN_DB_12; cc.bitwidth = ADC_BITWIDTH_12;
-        if (board::LADDER_CH >= 0) adc_oneshot_config_channel(s_adc, (adc_channel_t)board::LADDER_CH, &cc);
+        if (board::LADDER_CH >= 0) {
+            adc_oneshot_config_channel(s_adc, (adc_channel_t)board::LADDER_CH, &cc);
+            // With no ladder wired the pin floats and reads as random buttons (it held
+            // CUE at boot). The internal pull-up (~45k) parks it at 3V3; with the ladder's
+            // 10k it shifts the levels by under 170 mV, inside the 250 mV window.
+            gpio_pullup_en(board::LADDER);
+        }
         if (board::POT_CH >= 0) adc_oneshot_config_channel(s_adc, (adc_channel_t)board::POT_CH, &cc);
         adc_cali_curve_fitting_config_t cf = {};
         cf.unit_id = ADC_UNIT_1; cf.atten = ADC_ATTEN_DB_12; cf.bitwidth = ADC_BITWIDTH_12;
