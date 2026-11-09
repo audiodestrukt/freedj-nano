@@ -149,7 +149,24 @@ screens, USB host, SD, networking) from the audio. Expected cost of adding each 
   random access.
 - **MP3 decoding:** possible; a fixed-point decoder is roughly 20-30 % at 44.1 kHz stereo.
   IMA ADPCM in the pack (4:1, block-wise so it stays seekable) is the cheaper route.
-- **Wi-Fi Pro DJ Link:** the tightest fit.
+- **Pro DJ Link:** the tightest fit, though not for average CPU, and it's an estimate, not a
+  measurement:
+  - **Wi-Fi bursts share the core.** The Wi-Fi driver, lwIP and radio interrupts run at high
+    priority in bursts that can last milliseconds. On a dual-core chip they stay on the other
+    core; here they land between audio blocks. The worst block is at a third of its deadline,
+    with ~23 ms of I2S buffer behind it, so it probably fits, but it's latency that we don't
+    schedule.
+  - **Flash writes stall the tracks.** Wi-Fi keeps calibration and settings in flash (NVS);
+    while flash is written it can't be read, and the tracks are read straight from flash. So:
+    no flash writes during playback.
+  - **Wired means sharing SPI.** The C6 has no Ethernet MAC, so wired Link means a W5500 on SPI,
+    and the C6 has one general-purpose SPI bus, which the TFT uses: packets would queue behind
+    12 ms waveform transfers. Fine with an OLED.
+  - **Link wasn't built for Wi-Fi.** The traffic is light (status a few times a second per
+    player, a packet per beat), but broadcasts over Wi-Fi go at the lowest rate, get dropped
+    and arrive with 2-20 ms of jitter: a sync-quality problem rather than a CPU one.
+  - **Test before building on it:** Wi-Fi on, Link keepalives going, keylock at 44.1 kHz, and
+    watch the dropout count and worst block.
 
 There's also headroom left in the engine: keylock's search bounds-checks every sample read,
 and a direct-pointer path would cut its cost roughly in half.
