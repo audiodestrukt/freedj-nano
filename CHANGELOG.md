@@ -2,6 +2,15 @@
 
 Newest first. Each entry lists what changed, then the budget measured at that point.
 
+## 2026-11-10: docs/DECK10C-CONTROLS.md (undecided)
+
+- The CH32V003 deck's controls, written up to come back to: all 16 usable pins are taken (the
+  pot goes on PD5, the unused USART TX: DECK10C's pin table updated). Jog options compared:
+  EC11 (now), AS5600 on the OLED's I2C bus (no pins), a slotted 3D-printed wheel with two slot
+  sensors counted by TIM2's encoder mode on PD3 / PD4 (no CPU, ~$0.20-0.60, 4N counts a turn),
+  with how to design the wheel; a side thumbwheel for browsing; buttons on a binary-weighted
+  resistor ladder to free pins; pin plans for each; a one-turn test to learn the DJ2Go's jog.
+
 ## 2026-11-10: CH32V003 scrub audio, both ways; cue mark on the overview
 
 - nano-lite plays backwards: a negative speed (varispeed only). When a backwards read falls

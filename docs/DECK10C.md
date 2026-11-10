@@ -75,6 +75,10 @@ THD+N in 20 Hz-20 kHz, tones at -6 dBFS; 1 % parts the worst way round, 40 ohm p
 
 ### Draft pins (check against the datasheet before wiring)
 
+All 16 usable pins are taken. Jog and browse options (an AS5600 or a slotted printed wheel on
+TIM2 for the jog, a side thumbwheel for browsing, buttons on a resistor ladder) and their pin
+plans: [DECK10C-CONTROLS.md](DECK10C-CONTROLS.md).
+
 | Function | Pin |
 |---|---|
 | SD card (or SPI flash) SCK / MOSI / MISO / CS | PC5 / PC6 / PC7 / PC0 |
@@ -82,7 +86,7 @@ THD+N in 20 Hz-20 kHz, tones at -6 dBFS; 1 % parts the worst way round, 40 ohm p
 | PWM audio high / low byte | PD2 (TIM1 CH1) / PA1 (TIM1 CH2) |
 | EC11 A / B / push | PD3 / PD4 / PC3 |
 | PLAY / CUE / SHIFT | PC4 / PA2 / PD0 (or a resistor ladder on one ADC pin) |
-| Pitch pot | an ADC pin (ladder and pot share the ADC) |
+| Pitch pot | PD5 (ADC A5; it's USART TX, which the deck doesn't use). Every other ADC pin is taken |
 | USART RX (MIDI, bridge) / TX | PD6 / PD5 |
 | SWIO | PD1 |
 
