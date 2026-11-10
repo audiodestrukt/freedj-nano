@@ -2,6 +2,24 @@
 
 Newest first. Each entry lists what changed, then the budget measured at that point.
 
+## 2026-11-10: the whole CH32V003 deck, simulated
+
+- `ch32v003/fw/`: the deck firmware behind `hal.h`: CDJ transport (CUE back-to-cue / set and
+  preview, PLAY), EC11 jog (nudge / search), SHIFT + turn list, push keylock, SHIFT + push range,
+  pitch pot, the DJ2Go over the bridge (0x01 + USB-MIDI) and console keys, SSD1306 pages (name;
+  time left, BPM at tempo, tempo, keylock, state; 16 px overview), SD over SPI with streaming
+  reads, TRACKS.BIN (`tools/pack_lite.py`), Petit FatFs (vendored, mount and open only, plus
+  `pf_contig()`).
+- `ch32v003/sim/`: the firmware on emulated parts (SD card on SPI, SSD1306 on I2C), in an SDL
+  window with sound, the panel on the keyboard, a pty for `midi_bridge.py` or the DJ2Go direct
+  (`make sim`); headless scripted sessions, 31 checks (`make simtest`); `tools/sdimage.py`
+  writes FAT32 card images (MBR, 32 KB clusters, `--fragment`).
+- `make deckbench`: the same firmware for RV32EC in qemu, every instruction counted by part.
+- Budget (10.5 s session, 1.5 cycles per instruction): flash 10.8 KB + ~1.5 KB drivers = ~12.1 of
+  16 KB; RAM 1403 B + 256 B DMA ring + 364 B stack = 2023 of 2048 B; CPU 14 % (engine 9 %); worst
+  main-loop step 95 k instructions, 68 % of the ring (the list view). Single-block SD reads
+  instead: 66 % CPU, worst step 303 %: streaming (CMD18) is required.
+
 ## 2026-11-10: CH32V003 PWM output modelled
 
 - `ch32v003/sim/pwm_sim.py` (`make pwm`): TIM1's two PWM pins, the 1 : 256 resistor sum (with

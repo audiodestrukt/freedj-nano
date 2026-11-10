@@ -1,7 +1,8 @@
 # The 10-cent DJ deck (plan)
 
 Status: plan, 2026-11-09; phase 0 done 2026-11-10 (the engine runs in the emulator, see
-[Phase 0 results](#phase-0-results-2026-11-10)). No hardware yet. A DJ deck around the **CH32V003**, a 10-cent
+[Phase 0 results](#phase-0-results-2026-11-10)); the whole deck firmware written and simulated
+2026-11-10 ([below](#the-whole-deck-simulated-2026-11-10)). No hardware yet. A DJ deck around the **CH32V003**, a 10-cent
 RISC-V microcontroller with 2 KB of RAM. The point is to find out how far freedj-nano's
 no-buffers engine stretches; the board around it costs a few dollars. Context: why this chip and
 not the others in the cheap-MCU roundup is in [TARGETS.md](TARGETS.md).
@@ -168,6 +169,37 @@ for RV32EC (`-march=rv32ec_zicsr -mabi=ilp32e -Os`) in the ESP-IDF image's GCC, 
 - **Still unknown:** cycles per instruction on the real core, SD stalls, the pins' output
   resistance and the board's supply noise. Phase 1-2.
 
+## The whole deck, simulated (2026-11-10)
+
+The firmware for phases 2-5 exists (`ch32v003/fw/`: transport, controls, DJ2Go map, OLED pages,
+SD driver, TRACKS.BIN, Petit FatFs) behind a small HAL, and runs two ways before any hardware:
+
+- **On the computer** (`make sim`): emulated SD card (SPI, byte by byte, a FAT32 image), SSD1306
+  (drawn from the I2C bytes), EC11, buttons and pot on the keyboard, the USART as a pty for
+  `midi_bridge.py` or the DJ2Go read directly, sound out. `make simtest`: 31 checks over
+  scripted sessions (CDJ CUE / PLAY, search, preview, keylock pitch on a 440 Hz tone at +9.8 %,
+  the list, DJ2Go notes and CCs, console keys, end of track, a fragmented file and no card).
+- **For RV32EC in qemu** (`make deckbench`): the same firmware with the emulators linked in and
+  left out of the count, a 10.5 s session (play, tempo, keylock, list, load, cue, search,
+  preview). The SPI byte wait (16 cycles at 24 MHz) is charged as instructions.
+
+| | |
+|---|---|
+| Flash | 10.8 KB measured (engine 3.5, app 2.4, screen 2.2 incl. the font, FAT 1.1, SD 0.9, tracks 0.4) + chip drivers and startup ~1.5 KB = **~12.1 of 16 KB** |
+| RAM | 1403 B of variables (engine 1032) + the 256 B DMA ring + 364 B of stack (deepest seen) = **2023 of 2048 B**: 25 B spare |
+| CPU | **14 %** at 1.5 cycles per instruction (engine 9 %, SPI wait 1 %, SD driver, screen and app ~1 % each) |
+| Worst main-loop step | 95 k instructions, **68 %** of what the ring covers (3 blocks, 4.35 ms): the track list, whose name reads each restart the SD stream (300 us access); keylock searches are ~45 % |
+
+- **SD reads have to stream.** Single-block reads (CMD17, Petit FatFs's way) for 32 bytes at a
+  time: 689 commands a second, 33 % of the SPI bus, 66 % of the CPU, and a worst step at 303 %:
+  audio drops. Holding a multi-block read (CMD18) open and clocking forward: 32 KB/s, 1 % of the
+  bus. That needs TRACKS.BIN in one piece (checked at mount; written to a fresh card it is), and
+  then no FAT lookups after the mount (Petit's `pf_lseek` walks the cluster chain from the
+  start on every backward seek).
+- **Found:** `lite_pos()` jumped back a hop at every hop's end in keylock (fixed, tested).
+- **Margins:** 25 B of RAM; a card read stall longer than ~1.4 ms in the list view (~2.5 ms while
+  playing) drops audio at 1.5 cycles per instruction, less at more. Phase 2 logs real stalls.
+
 ## Shopping list
 
 - CH32V003F4P6 dev boards, **with the WCH-LinkE**
@@ -190,7 +222,10 @@ tests with the C6 build.
   of mu-law at 22.05 kHz, but the keylock keeps most of it in use, against the occasional
   10 ms+ stall: reads have to run ahead of the playhead with some slack.
 - Does Petit FatFs fit next to everything else in 16 KB? (estimated ~12 KB total)
-- Cycles per instruction on the QingKe V2A (phase 1): keylock is 18 % at 1.5, 36 % at 3.
+- Cycles per instruction on the QingKe V2A (phase 1): the whole deck is 14 % at 1.5, 27 % at 3;
+  its worst step (the list) 68 % of the ring at 1.5, over it at 2.2.
+- RAM: 25 B spare. If the chip's HAL needs more, the FATFS object (~40 B, only used at mount)
+  can share memory with the screen's page buffer.
 - Dual PWM is good enough on paper (it beats mu-law). Are the 22.05 kHz images? Listen to
   `ch32v003/build/out/pwm_*.wav` against `pwm_reference.wav`; if they're not, 2x interpolation
   (RAM) or tracks packed band-limited to ~9 kHz (free).

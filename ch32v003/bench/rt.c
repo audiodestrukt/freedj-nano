@@ -27,3 +27,12 @@ int32_t __divsi3(int32_t a, int32_t b)
     const uint32_t q = udiv(a < 0 ? -(uint32_t)a : (uint32_t)a, b < 0 ? -(uint32_t)b : (uint32_t)b, 0);
     return neg ? -(int32_t)q : (int32_t)q;
 }
+// The deck firmware's few divisions (the screen's numbers, the tempo maths, FAT mount).
+uint32_t __udivsi3(uint32_t a, uint32_t b) { return udiv(a, b, 0); }
+uint32_t __umodsi3(uint32_t a, uint32_t b) { uint32_t r; udiv(a, b, &r); return r; }
+int32_t __modsi3(int32_t a, int32_t b)
+{
+    uint32_t r;
+    udiv(a < 0 ? -(uint32_t)a : (uint32_t)a, b < 0 ? -(uint32_t)b : (uint32_t)b, &r);
+    return a < 0 ? -(int32_t)r : (int32_t)r;
+}
