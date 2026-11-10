@@ -2,6 +2,25 @@
 
 Newest first. Each entry lists what changed, then the budget measured at that point.
 
+## 2026-11-10: CH32V003 scrolling waveform; a cycle model; CPU and fps in the sim
+
+- Screen pages 4-6: a CDJ-style waveform, 1.5 s around the playhead (0.37 s behind), 23 px
+  mirrored, at least 1 px so it joins up, beat ticks (downbeats longer), playhead inverted, cue
+  notch, the past dimmed. One peak per 256 frames in TRACKS.BIN (pack_lite.py, `peaks_off` in
+  the entry's spare bytes); read from the card straight into the page buffer, so no RAM.
+  Pages are addressed one at a time (`WAVE_DIV` can skip the waveform on some frames). Page 3
+  now carries the cue time; page 7 an 8 px overview. The bar meter and elapsed time went.
+- RAM: Petit FatFs's state borrows the screen's page buffer during the mount: 1998 of 2048 B
+  (50 B spare). The mount waits for the I2C to be idle.
+- `make deckbench`: a cycle model (flash fetch at one wait state, +1 per load / store, +2 per
+  taken branch, 20 cycles per SPI byte) next to the flat 1.5: 2.57 cycles per instruction.
+  37 % CPU, worst step 135 % of the ring: **the waveform's SD reads overrun the audio** (two
+  stream restarts in a step); without the waveform 22 % and 91 %. Worst steps broken down by
+  part; the boot mount (silent) left out.
+- `make sim` window: CPU estimate (per-unit costs from the cycle model: 35.5 % vs deckbench's
+  37 % on the same session; it underestimates the worst step), worst step, fps.
+- Budget: flash 12.1 KB + ~1.5 KB drivers = ~13.3 of 16 KB. 31 sim checks pass.
+
 ## 2026-11-10: CH32V003 deck on a 128x64 OLED
 
 - The screen is now the 0.96" SSD1306 128x64 (more common, more room). Same one-page buffer, so

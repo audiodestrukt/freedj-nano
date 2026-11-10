@@ -81,6 +81,23 @@ static SDL_AudioDeviceID s_audio;
 // ---- I2C
 static double s_i2cDoneUs;
 
+// ---- CPU estimate. The firmware runs natively here, so its cycles are estimated from what it
+// does, at costs from sim/qemu's cycle model (make deckbench: ~2.3-2.6 cycles per instruction
+// on the QingKe V2A, flash fetch and taken branches). A guide; deckbench is the measurement.
+#define C_PAUSED    25      // per sample, not playing
+#define C_STRAIGHT  200     // per sample, varispeed at 1.00
+#define C_VARI      335     // per sample, varispeed at another speed
+#define C_KEYLOCK   350     // per sample, keylock between searches
+#define C_SEARCH    85000   // one keylock search and its read-ahead (every 256 samples)
+#define C_SPI_BYTE  30      // a polled SPI byte: the wire + the driver
+#define C_PAGE      13500   // rendering one OLED page
+#define C_STEP      2000    // the rest of a main-loop step
+#define RING_CYCLES (48e6 * (HAL_AUDIO_BLOCKS - 1) * HAL_AUDIO_BLOCK / RATE)
+static double   s_stepC, s_totalC, s_winC, s_winPeak, s_peak, s_cpuPct, s_peakPct;
+static uint16_t s_lastI;
+static uint32_t s_frames, s_winFrames;    // OLED frames begun (page 0 addressed)
+static double   s_fps;
+
 // ================================================================ HAL
 
 uint32_t hal_ms(void) { return (uint32_t)(nowUs() / 1000); }
@@ -99,18 +116,48 @@ static void sdTiming(void)
     s_sd.stallEvery = o_stallEvery;
 }
 void hal_sd_select(int on) { sd_emu_select(&s_sd, on); }
-uint8_t hal_spi(uint8_t b) { if (s_sdFd < 0) { s_sd.bytes++; return 0xFF; } return sd_emu_xfer(&s_sd, b); }   // no card: MISO pulled up
+uint8_t hal_spi(uint8_t b) { s_stepC += C_SPI_BYTE; if (s_sdFd < 0) { s_sd.bytes++; return 0xFF; } return sd_emu_xfer(&s_sd, b); }   // no card: MISO pulled up
 void hal_spi_fast(int on) { s_spiHz = on ? o_spiMhz * 1e6 : 400e3; sdTiming(); }
 
 void hal_i2c_send(uint8_t addr, const uint8_t* p, uint16_t n)
 {
     oled_emu_write(&s_oled, addr, p, n);
+    if (n > 100) s_stepC += C_PAGE;
+    if (n == 7 && p[0] == 0x00 && p[1] == 0x21 && p[5] == 0) { s_frames++; s_winFrames++; }
     s_i2cDoneUs = nowUs() + (n + 1) * 9 / 0.4;   // 400 kHz, 9 clocks a byte, + the address
 }
 int hal_i2c_busy(void) { return nowUs() < s_i2cDoneUs; }
 
 uint8_t* hal_audio_block(void) { return s_filled < HAL_AUDIO_BLOCKS ? s_ring[(s_rd + s_filled) % HAL_AUDIO_BLOCKS] : 0; }
-void hal_audio_commit(void) { s_filled++; }
+void hal_audio_commit(void)
+{
+    s_filled++;
+    if (!g_deck.playing) s_stepC += HAL_AUDIO_BLOCK * C_PAUSED;
+    else if (g_deck.stretch) {
+        s_stepC += HAL_AUDIO_BLOCK * C_KEYLOCK;
+        if (g_deck.i < s_lastI || g_deck.i == 0) s_stepC += C_SEARCH;   // a hop began: a search
+    } else s_stepC += HAL_AUDIO_BLOCK * (g_deck.speed == 0x10000 ? C_STRAIGHT : C_VARI);
+    s_lastI = g_deck.i;
+}
+
+// One main-loop step, with its estimated cycles.
+static void step(void)
+{
+    s_stepC = C_STEP;
+    app_step();
+    s_totalC += s_stepC; s_winC += s_stepC;
+    if (s_stepC > s_winPeak) s_winPeak = s_stepC;
+    if (nowUs() > 100e3 && s_stepC > s_peak) s_peak = s_stepC;    // after the boot mount
+}
+
+// Per-second figures for the window.
+static void cpuWindow(double secs)
+{
+    s_cpuPct = s_winC / (secs * 48e6) * 100;
+    s_peakPct = s_winPeak / RING_CYCLES * 100;
+    s_fps = s_winFrames / secs;
+    s_winC = s_winPeak = 0; s_winFrames = 0;
+}
 
 // ================================================================ the "DMA": one block out
 
@@ -213,11 +260,12 @@ static void status(const char* why)
     const double t = nowUs() / 1e6;
     printf("t=%.3f %s count=%u track=%d state=%d pos=%ld speed=%.4f keylock=%d stretch=%d tempo=%d range=%d "
            "browse=%d sel=%d cue=%lu err=%d misses=%u underruns=%u sd_cmds=%u sd_reads=%u sd_bytes=%llu "
-           "sd_stalls=%u oled_bytes=%u\n",
+           "sd_stalls=%u oled_bytes=%u frames=%u cpu_est=%.1f peak_step=%.0f\n",
            t, why, g_app.count, g_app.track == APP_NONE ? -1 : g_app.track, g_app.state, (long)lite_pos(&g_deck),
            g_deck.speed / 65536.0, g_app.keylock, g_deck.stretch, g_app.tempo, g_app.range,
            g_app.browsing, g_app.sel, (unsigned long)g_app.cue, g_app.err, g_deck.misses, s_underruns,
-           s_sd.cmds, s_sd.reads, (unsigned long long)s_sd.bytes, s_sd.stalls, s_oled.bytes);
+           s_sd.cmds, s_sd.reads, (unsigned long long)s_sd.bytes, s_sd.stalls, s_oled.bytes, s_frames,
+           t > 0 ? s_totalC / (t * 48e6) * 100 : 0.0, s_peak / RING_CYCLES * 100);
     fflush(stdout);
 }
 
@@ -312,6 +360,7 @@ static int runScript(void)
     double end = n ? ev[n - 1].ms : 0, nextStatus = 1000;
     int i = 0;
     app_init();
+    for (int k = 0; k < 40; k++) { step(); consumeBlock(); }   // ~60 ms: the card mounted
     status("boot");
     while (i < n || nowUs() / 1000 <= end) {
         const double ms = nowUs() / 1000;
@@ -329,7 +378,7 @@ static int runScript(void)
             status(why);
         }
         encoderStep();
-        app_step();
+        step();
         consumeBlock();                                      // 32 samples = 1.45 ms per step
         if (ms >= nextStatus) { nextStatus += 1000; status("tick"); }
     }
@@ -375,7 +424,7 @@ static void keyEvent(SDL_Keycode k, int down, int ctrl)
 static int runWindow(void)
 {
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)) { fprintf(stderr, "SDL: %s\n", SDL_GetError()); return 1; }
-    const int W = 128 * o_scale, H = 64 * o_scale, PAD = 12, INFO = 3 * 10 * 2;
+    const int W = 128 * o_scale, H = 64 * o_scale, PAD = 12, INFO = 4 * 10 * 2;
     SDL_Window* win = SDL_CreateWindow("freedj nano: CH32V003 deck (sim)", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                                        W + 2 * PAD, H + 3 * PAD + INFO, 0);
     SDL_Renderer* ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_PRESENTVSYNC);
@@ -411,7 +460,7 @@ static int runWindow(void)
         const uint64_t due = (uint64_t)(nowUs() * RATE / 1e6);
         if (s_samples + HAL_AUDIO_BLOCK <= due) { consumeBlock(); did = 1; }
         encoderStep();
-        app_step();
+        step();
         const uint64_t now = SDL_GetTicks();
         if (now - lastDraw >= 33) {
             lastDraw = now;
@@ -419,6 +468,7 @@ static int runWindow(void)
             if (t - lastT >= 1) {
                 spiPct = (s_sd.bytes - lastBytes) * 8 / s_spiHz / (t - lastT) * 100;
                 cmdsPerS = (s_sd.cmds - lastCmds) / (t - lastT);
+                cpuWindow(t - lastT);
                 lastBytes = s_sd.bytes; lastCmds = s_sd.cmds; lastT = t;
             }
             SDL_SetRenderDrawColor(ren, 24, 24, 28, 255); SDL_RenderClear(ren);
@@ -427,15 +477,17 @@ static int runWindow(void)
             SDL_SetRenderDrawColor(ren, 0x9F, 0xE8, 0xFF, 255);
             for (int y = 0; y < 64; y++) for (int x = 0; x < 128; x++)
                 if (oled_emu_pixel(&s_oled, x, y)) { SDL_Rect q = { PAD + x * o_scale, PAD + y * o_scale, o_scale - 1, o_scale - 1 }; SDL_RenderFillRect(ren, &q); }
-            char l1[160], l2[160], l3[160];
+            char l1[160], l2[160], l3[160], l4[160];
             snprintf(l1, sizeof l1, "pot %4d  %s%s%s%s", s_pot, s_buttons & PIN_PLAY ? "PLAY " : "", s_buttons & PIN_CUE ? "CUE " : "",
                      s_buttons & PIN_SHIFT ? "SHIFT " : "", s_buttons & PIN_PUSH ? "PUSH" : "");
             snprintf(l2, sizeof l2, "SD bus %4.1f%%  %4.0f cmd/s  stalls %u", spiPct, cmdsPerS, s_sd.stalls);
-            snprintf(l3, sizeof l3, "underruns %u  ring misses %u", s_underruns, g_deck.misses);
+            snprintf(l3, sizeof l3, "CPU ~%2.0f%% est  worst step %3.0f%%", s_cpuPct, s_peakPct);
+            snprintf(l4, sizeof l4, "%2.0f fps  underruns %u  misses %u", s_fps, s_underruns, g_deck.misses);
             SDL_SetRenderDrawColor(ren, 170, 170, 180, 255);
             drawText(ren, PAD, H + 2 * PAD, 2, l1);
             drawText(ren, PAD, H + 2 * PAD + 20, 2, l2);
             drawText(ren, PAD, H + 2 * PAD + 40, 2, l3);
+            drawText(ren, PAD, H + 2 * PAD + 60, 2, l4);
             SDL_RenderPresent(ren);
         }
         if (!did && s_filled == HAL_AUDIO_BLOCKS) SDL_Delay(1);

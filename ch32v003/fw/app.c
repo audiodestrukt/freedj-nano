@@ -40,6 +40,7 @@ static void loadNow(uint16_t i)
 {
     if (!trk_get(i, &s_trk)) return;
     g_app.track = i; g_app.frames = s_trk.frames; g_app.bpmX100 = s_trk.bpmX100; g_app.firstBeat = s_trk.firstBeat;
+    g_app.peaksOff = s_trk.peaksLen >= (s_trk.frames + TRK_PEAK - 1) / TRK_PEAK ? s_trk.peaksOff : 0;
     g_app.cue = 0; g_app.state = ST_STOP;
     trk_name(i, g_app.name);
     trk_overview(i, g_app.ov);
@@ -253,18 +254,19 @@ static void serial(void)
 
 static void mount(void)
 {
-    g_app.err = (uint8_t)trk_mount();
+    g_app.err = (uint8_t)trk_mount(ui_borrow());          // Petit FatFs's state, only while mounting
     g_app.count = trk_count();
     if (!g_app.err && g_app.count) loadNow(0);
     else s_retryAt = hal_ms() + 2000;
 }
 
+static uint8_t s_mounted;
+
 void app_init(void)
 {
     g_app.track = APP_NONE;
     g_app.range = 10;
-    ui_begin();
-    mount();
+    ui_begin();                                   // the mount waits for this to go out
 }
 
 static void afterBlock(void)
@@ -296,6 +298,9 @@ void app_step(void)
     serial();
     ui_step();
     const uint32_t now = hal_ms();
-    if (g_app.err && (int32_t)(now - s_retryAt) >= 0) mount();
+    if ((!s_mounted || g_app.err) && (int32_t)(now - s_retryAt) >= 0 && !hal_i2c_busy()) {
+        s_mounted = 1;
+        mount();
+    }
     if (g_app.browsing && now - s_browseAt > BROWSE_IDLE_MS) g_app.browsing = 0;
 }

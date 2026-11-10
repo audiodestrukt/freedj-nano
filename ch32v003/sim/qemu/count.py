@@ -7,7 +7,13 @@ through the linker map. The emulated parts and the HAL are left out. Also: flash
 per part, the stack depth reached, and the worst main-loop steps against the audio ring."""
 import bisect, collections, re, subprocess, sys
 
-CPI = 1.5                       # cycles per instruction, until phase 1 measures it
+CPI = 1.5                       # the flat assumption so far; the cycle model below replaces it
+# Cycle model for the QingKe V2A at 48 MHz. Nothing official gives a CPI; what's known: flash
+# has one wait state at 48 MHz (2 cycles per 32-bit fetch, with a prefetch buffer), most
+# instructions take 1 cycle, a taken branch refills the 2-stage pipeline. So per translated
+# block: max(instructions, 2 x 32-bit words fetched) + 1 per load or store + 2 if the block
+# ends in a taken branch. A polled SPI byte: 20 cycles (16 on the wire + the register work).
+TAKEN, MEM, SPI_BYTE = 2, 1, 20
 CLK = 48e6
 RATE = 22059
 BLOCK = 32
@@ -58,16 +64,25 @@ MARK, EVENT = syms["sim_block_mark"], syms["sim_event_mark"]
 # ---- trace: "IN:" listings give each translated block's size, "Trace" lines its executions
 p = subprocess.Popen(["qemu-riscv32", "-cpu", "rv32e,c=true", "-d", "in_asm,exec,nochain", "-D", "/dev/stdout",
                       "build/rv/deck.elf"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1 << 20)
-tbsize, part_of = {}, {}
+tbsize, part_of, tbcyc, tbend = {}, {}, {}, {}
 total = collections.Counter()
+cyc = collections.Counter()
+SPI_FN = syms.get("spi_bus_byte")
+stepc, cstep = [], 0
+stepparts, cparts = [], collections.Counter()
+prev_end, prev_part = None, None
 steps, n, started, events = [], 0, False, []
 listing, start, cnt, said = False, None, 0, []
+words, mem, last = set(), 0, 0
 for line in p.stdout:
     if line.startswith("Trace"):
         pc = int(line.split("/")[1], 16)
+        if prev_part and pc != prev_end:                # the last block's branch was taken
+            cyc[prev_part] += TAKEN; cstep += TAKEN; cparts[prev_part] += TAKEN
+        prev_part = None
         if pc == MARK:
-            if started: steps.append(n)
-            started, n = True, 0
+            if started: steps.append(n); stepc.append(cstep); stepparts.append(cparts)
+            started, n, cstep, cparts = True, 0, 0, collections.Counter()
         elif pc == EVENT:
             events.append(len(steps))
         else:
@@ -77,13 +92,24 @@ for line in p.stdout:
                 part = part_of[pc] = None if obj in EMU else PARTS.get(obj, "other")
             if part:
                 k = tbsize[pc]; total[part] += k; n += k
+                c = SPI_BYTE if pc == SPI_FN else tbcyc[pc]
+                cyc[part] += c; cstep += c; cparts[part] += c
+                prev_end, prev_part = tbend[pc], (None if pc == SPI_FN else part)
     elif line.startswith("IN:"):
-        listing, start, cnt = True, None, 0
+        listing, start, cnt, words, mem = True, None, 0, set(), 0
     elif listing and line.startswith("0x"):
-        if start is None: start = int(line[2:line.index(":")], 16)
+        f = line.split()
+        a = int(f[0][2:-1], 16)
+        size = len(f[1]) // 2
+        if start is None: start = a
         cnt += 1
+        words.add(a >> 2); words.add((a + size - 1) >> 2)
+        if f[2] in ("lw", "lh", "lhu", "lb", "lbu", "sw", "sh", "sb"): mem += 1
+        last = a + size
     elif listing and not line.strip():
         tbsize[start] = cnt; listing = False
+        tbcyc[start] = max(cnt, 2 * len(words)) + MEM * mem
+        tbend[start] = last
 p.wait()
 said = p.stderr.read().strip().splitlines()
 if p.returncode: sys.exit(f"qemu exited {p.returncode}: " + "\n".join(said))
@@ -108,11 +134,24 @@ print(f"== instructions over {secs:.1f} s of audio ({len(steps)} main-loop steps
 for part, k in total.most_common():
     print(f"   {part:20s} {k / secs / 1e3:8.1f} k/s  {k / fw * 100:5.1f} %   {k * CPI / secs / CLK * 100:5.1f} % of the CPU")
 print(f"   {'total':20s} {fw / secs / 1e3:8.1f} k/s           {fw * CPI / secs / CLK * 100:5.1f} % of the CPU at {CPI} cycles/instruction")
+ct = sum(cyc.values())
+print(f"== cycles, fetch/branch model: {ct / fw:.2f} cycles per instruction on average")
+for part, k in cyc.most_common():
+    print(f"   {part:20s} {k / total[part] if total[part] else 0:5.2f} CPI  {k / secs / CLK * 100:5.1f} % of the CPU")
+print(f"   {'total':20s} {ct / fw:5.2f} CPI  {ct / secs / CLK * 100:5.1f} % of the CPU")
 limit = (RING - 1) * BLOCK / RATE * budget
+climit = (RING - 1) * BLOCK / RATE * CLK
 print(f"== slowest main-loop steps (the ring holds {RING - 1} blocks ahead: {limit / 1e3:.0f} k instructions before audio drops)")
 order = sorted(range(len(steps)), key=lambda i: -steps[i])[:6]
 for i in order:
     print(f"   {steps[i] / 1e3:7.1f} k at {i * BLOCK / RATE:6.3f} s  ({steps[i] / limit * 100:4.0f} % of the slack)")
 worst = steps[order[0]] if order else 0
-print(f"== verdict: {fw * CPI / secs / CLK * 100:.0f} % of the CPU on average, worst step {worst / limit * 100:.0f} % of the ring's slack"
-      + (" -> AUDIO WOULD DROP" if worst > limit else ""))
+first = events[0] if events else 0                          # before it: the mount, nothing playing
+live = range(first, len(stepc))
+cw = max((stepc[i] for i in live), default=0)
+print(f"   cycle model, from the first event on (the boot mount, silent, is left out):")
+for i in sorted(live, key=lambda i: -stepc[i])[:5]:
+    print(f"   {stepc[i] / 1e3:7.1f} k cycles at {i * BLOCK / RATE:6.3f} s  ({stepc[i] / climit * 100:4.0f} % of the ring's {climit / 1e3:.0f} k): "
+          + ", ".join(f"{k} {v / 1e3:.0f}k" for k, v in stepparts[i].most_common(4)))
+print(f"== verdict: {ct / secs / CLK * 100:.0f} % of the CPU on average (cycle model; {fw * CPI / secs / CLK * 100:.0f} % at a flat {CPI}), "
+      f"worst step {cw / climit * 100:.0f} % of the ring's slack" + (" -> AUDIO WOULD DROP" if cw > climit else ""))

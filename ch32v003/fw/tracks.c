@@ -4,7 +4,6 @@
 #include "pff/diskio.h"
 #include "pff/pff.h"
 
-static FATFS    s_fs;
 static uint32_t s_base;                   // first sector of TRACKS.BIN
 static uint32_t s_size;
 static uint16_t s_count;
@@ -23,18 +22,21 @@ void trk_read(uint32_t off, uint8_t* dst, uint16_t n)
 
 static uint32_t le32(const uint8_t* p) { return p[0] | p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24; }
 
-int trk_mount(void)
+_Static_assert(sizeof(FATFS) <= TRK_WORK, "FATFS outgrew TRK_WORK");
+
+int trk_mount(void* work)
 {
+    FATFS* fs = (FATFS*)work;
     s_count = 0;
     if (disk_initialize()) return TRK_NO_CARD;
-    if (pf_mount(&s_fs)) return TRK_NO_FAT;
+    if (pf_mount(fs)) return TRK_NO_FAT;
     if (pf_open("TRACKS.BIN")) return TRK_NO_FILE;
     switch (pf_contig(&s_base)) {
     case FR_OK: break;
     case FR_NO_FILE: return TRK_FRAGMENTED;
     default: return TRK_NO_FAT;
     }
-    s_size = s_fs.fsize;
+    s_size = fs->fsize;
     uint8_t h[8];
     trk_read(0, h, 8);
     if (h[0] != 'F' || h[1] != 'D' || h[2] != 'J' || h[3] != 'L' || h[4] != 1 || h[5]) return TRK_BAD_PACK;
@@ -54,6 +56,9 @@ int trk_get(uint16_t i, trk_info* t)
     trk_read(entry(i) + 32, e, 16);
     t->off = le32(e); t->frames = le32(e + 4); t->bpmX100 = le32(e + 8); t->firstBeat = le32(e + 12);
     if (t->off > s_size || t->frames > s_size - t->off) t->frames = 0;
+    trk_read(entry(i) + 112, e, 8);
+    t->peaksOff = le32(e); t->peaksLen = le32(e + 4);
+    if (t->peaksOff > s_size || t->peaksLen > s_size - t->peaksOff) t->peaksOff = t->peaksLen = 0;
     return 1;
 }
 

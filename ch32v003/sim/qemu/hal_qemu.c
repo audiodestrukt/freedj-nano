@@ -67,11 +67,24 @@ int hal_uart_rx(void) { return -1; }
 void hal_sd_select(int on) { sd_emu_select(&s_sd, on); }
 void spi_bus_byte(void);
 uint8_t hal_spi(uint8_t b) { sp(); spi_bus_byte(); return sd_emu_xfer(&s_sd, b); }
+// The card's access time and stalls as 0xFF bytes the driver polls through. Its loop is ~17
+// counted instructions a byte (SPI wait + driver), ~25 cycles: ~1.9 bytes per microsecond.
+#ifndef SD_ACCESS_US
+#define SD_ACCESS_US 300
+#endif
+#ifndef SD_STALL_US
+#define SD_STALL_US 0                                         // an extra wait now and then...
+#endif
+#ifndef SD_STALL_EVERY
+#define SD_STALL_EVERY 0                                      // ...every Nth read command
+#endif
+#define WAIT_BYTES(us) (((us) * 15) >> 3)
 void hal_spi_fast(int on)
 {
-    const uint32_t bpu = on ? SPI_HZ / 8000000 : 1;          // bytes per microsecond (400 kHz: ~0)
-    s_sd.access = on ? 300 * bpu : 15;                        // 300 us
+    s_sd.access = on ? WAIT_BYTES(SD_ACCESS_US) : 15;
     s_sd.gap = s_sd.access / 4;
+    s_sd.stall = WAIT_BYTES(SD_STALL_US);
+    s_sd.stallEvery = SD_STALL_EVERY;
 }
 void hal_i2c_send(uint8_t addr, const uint8_t* p, uint16_t n)
 {
@@ -135,7 +148,7 @@ done:
     put("session "); putn(s_ms); put(" ms: track "); putn(g_app.track + 1u); put(", state "); putn(g_app.state);
     put(", keylock "); putn(g_app.keylock); put(", misses "); putn(g_deck.misses);
     put(", SD commands "); putn(s_sd.cmds); put(", SD bytes "); putn((uint32_t)s_sd.bytes);
-    put(", OLED bytes "); putn(s_oled.bytes);
+    put(", OLED bytes "); putn(s_oled.bytes); put(", SD stalls "); putn(s_sd.stalls);
     put("\nstack: "); putn((uint32_t)(s_spTop - s_spMin)); put(" bytes below qemu_main\n");
     return 0;
 }

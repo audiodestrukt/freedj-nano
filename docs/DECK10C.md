@@ -186,11 +186,23 @@ SD driver, TRACKS.BIN, Petit FatFs) behind a small HAL, and runs two ways before
 
 | | |
 |---|---|
-| Flash | 11.5 KB measured (engine 3.5, screen 2.8 incl. the font, app 2.4, FAT 1.1, SD 0.9, tracks 0.4) + chip drivers and startup ~1.5 KB = **~12.7 of 16 KB** |
-| RAM | 1407 B of variables (engine 1032) + the 256 B DMA ring + 364 B of stack (deepest seen) = **2027 of 2048 B**: 21 B spare |
-| CPU | **15 %** at 1.5 cycles per instruction (engine 9 %, screen 1.4 %, SPI wait, mul/div, SD driver and app ~1 % each) |
-| Worst main-loop step | 105 k instructions, **75 %** of what the ring covers (3 blocks, 4.35 ms): the track list, whose name reads each restart the SD stream (300 us access); keylock searches are ~45 % |
+| Flash | 12.1 KB measured (engine 3.5, screen 3.3 incl. the font, app 2.4, FAT 1.1, SD 0.9, tracks 0.5) + chip drivers and startup ~1.5 KB = **~13.3 of 16 KB** |
+| RAM | 1378 B of variables (engine 1032) + the 256 B DMA ring + 364 B of stack (deepest seen) = **1998 of 2048 B**: 50 B spare (Petit FatFs's ~40 B of state borrows the screen's page buffer during the mount) |
+| CPU | **37 %** in the cycle model (2.57 cycles per instruction; 22 % at a flat 1.5); 22 % without the waveform |
+| Worst main-loop step | **135 %** of what the ring covers (3 blocks, 4.35 ms = 209 k cycles) with the scrolling waveform: **audio would drop**. 91 % without it (the track list) |
 
+- **Cycles per instruction.** WCH publishes no CPI figure. What's known: flash has one wait
+  state at 48 MHz (2 cycles per 32-bit fetch, with a prefetch buffer), most instructions take one
+  cycle, taken branches refill the 2-stage pipeline. `make deckbench` now models that per
+  translated block from the trace (instruction sizes, loads and stores, taken branches): 2.57
+  on average, 2.3 for the engine. Probably pessimistic (it ignores the prefetch buffer); phase 1
+  measures it with SysTick. Until then 1.5 and the model bracket the truth.
+- **The waveform** (pages 4-6, 23 px, 1.5 s scrolling, beat ticks, at least 1 px so it joins
+  up) reads 128 peak bytes from the card per page. Each read stops the audio's SD stream and
+  starts another (300 us card access, then up to 511 bytes to the offset), and the audio then
+  restarts its own: SD traffic 32 -> 184 KB/s, and a step with a waveform page and a keylock
+  search runs to ~280 k cycles, ~110 k of them on the SPI bus. 10 fps (`WAVE_DIV=2`) doesn't
+  help: it's per step, not per second. Open: see the options in the open questions.
 - **SD reads have to stream.** Single-block reads (CMD17, Petit FatFs's way) for 32 bytes at a
   time: 689 commands a second, 33 % of the SPI bus, 66 % of the CPU, and a worst step at 303 %:
   audio drops. Holding a multi-block read (CMD18) open and clocking forward: 32 KB/s, 1 % of the
@@ -226,10 +238,12 @@ tests with the C6 build.
   of mu-law at 22.05 kHz, but the keylock keeps most of it in use, against the occasional
   10 ms+ stall: reads have to run ahead of the playhead with some slack.
 - Does Petit FatFs fit next to everything else in 16 KB? (estimated ~12 KB total)
-- Cycles per instruction on the QingKe V2A (phase 1): the whole deck is 15 % at 1.5, 29 % at 3;
-  its worst step (the list) 75 % of the ring at 1.5, over it at 2.0.
-- RAM: 21 B spare. If the chip's HAL needs more, the FATFS object (~40 B, only used at mount)
-  can share memory with the screen's page buffer.
+- Cycles per instruction on the QingKe V2A (phase 1): 1.5 flat or 2.57 modelled; the cycle
+  model says the waveform overruns the audio ring.
+- The waveform's SD reads: keep them out of steps that render audio heavily, cache the window
+  in RAM (64 B of 4-bit heights, reading only the new columns: one short read per frame; 50 B
+  spare now), or move tracks to SPI NOR flash (reads start in microseconds: no restart cost).
+- RAM: 50 B spare.
 - Dual PWM is good enough on paper (it beats mu-law). Are the 22.05 kHz images? Listen to
   `ch32v003/build/out/pwm_*.wav` against `pwm_reference.wav`; if they're not, 2x interpolation
   (RAM) or tracks packed band-limited to ~9 kHz (free).

@@ -6,7 +6,8 @@
     ch32v003/tools/pack_lite.py music/*.mp3 -o TRACKS.BIN
     ch32v003/tools/pack_lite.py a.wav --start 30 --length 60 -o TRACKS.BIN
 
-Mono 22.05 kHz G.711 mu-law (lite_ulaw[] decodes it), a 128-column overview per track,
+Mono 22.05 kHz G.711 mu-law (lite_ulaw[] decodes it), a 128-column overview per track, a
+peak byte per 256 frames for the scrolling waveform,
 BPM and first downbeat from tools/pack_tracks.py's detector. Copy TRACKS.BIN to a freshly
 formatted FAT32 card (so it's in one piece), or make a card image with sdimage.py.
 """
@@ -45,6 +46,17 @@ def overview(m):
     return bytes(int(h[2 * i]) | int(h[2 * i + 1]) << 4 for i in range(64))
 
 
+PEAK = 256                                            # fw/tracks.h TRK_PEAK
+
+
+def peaks(m):
+    """One byte per PEAK frames: the loudest |sample| in it, against the track's loudest."""
+    pad = (-len(m)) % PEAK
+    p = np.abs(np.pad(m, (0, pad))).reshape(-1, PEAK).max(axis=1)
+    ref = p.max() or 1.0
+    return np.clip(np.round(p / ref * 255), 0, 255).astype(np.uint8).tobytes()
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("files", nargs="+")
@@ -60,15 +72,17 @@ def main():
         bpm, first = pack_tracks.beat_grid(m, RATE)
         if a.bpm: bpm = a.bpm
         name = pack_tracks.title(f).encode("ascii", "replace")[:31]
-        tracks.append((name, ulaw_encode(m, tab).tobytes(), overview(m), bpm, first))
+        tracks.append((name, ulaw_encode(m, tab).tobytes(), overview(m), bpm, first, peaks(m)))
         print(f"{len(tracks):02d} {name.decode()}: {len(m) / RATE:.1f} s, {len(m) // 1024} KB"
               + (f", {bpm:.2f} BPM" if bpm else ""))
     head = bytearray(b"FDJL" + struct.pack("<HHII", 1, len(tracks), RATE, 0))
     body = bytearray(head + bytes(128 * len(tracks)))
-    for i, (name, mu, ov, bpm, first) in enumerate(tracks):
+    for i, (name, mu, ov, bpm, first, pk) in enumerate(tracks):
         body += bytes(-len(body) % 512)
         off = len(body); body += mu
-        e = name.ljust(32, b"\0") + struct.pack("<IIII", off, len(mu), int(round(bpm * 100)), first) + ov + bytes(16)
+        poff = len(body); body += pk
+        e = (name.ljust(32, b"\0") + struct.pack("<IIII", off, len(mu), int(round(bpm * 100)), first) + ov
+             + struct.pack("<II", poff, len(pk)) + bytes(8))
         body[16 + 128 * i: 16 + 128 * (i + 1)] = e
     open(a.out, "wb").write(body)
     print(f"wrote {a.out}: {len(tracks)} tracks, {len(body) / 1e6:.1f} MB")

@@ -7,10 +7,9 @@
 //
 //   deck:  0    "01 Track name"
 //          1-2  "-3:21" large               "128.0" BPM at this tempo, "+3.2%"
-//          3    PLAY / PAUSE / CUE, KEY (keylock, inverted), "+-10%" range
-//          4    the bar: four beats, the current one filled (from the beat grid)
-//          5    elapsed                     "CUE 0:12"
-//          6-7  overview: played part dimmed, playhead inverted, cue notch
+//          3    PLAY / PAUSE / CUE, KEY (keylock, inverted), "+-10" range, "C 0:12" cue
+//          4-6  the waveform around the playhead (1.5 s, scrolling), beat ticks, cue notch
+//          7    the whole track: played part dimmed, playhead inverted, cue
 //   list:  "TRACKS 3/12", then 7 names, the highlighted one inverted
 #include <stdint.h>
 
@@ -20,3 +19,7 @@ extern const uint8_t ui_font[95][5];
 
 void ui_begin(void);
 void ui_step(void);
+// The page buffer, lent out (the mount uses it for Petit FatFs's state). Only while the I2C
+// is idle; the frame starts again afterwards.
+uint8_t* ui_borrow(void);
+#define UI_BUF 129

@@ -39,7 +39,9 @@ sim's USART, exactly as against the chip (`midi_bridge.py --port ch32v003/build/
 program can have the DJ2Go open, so stop any other bridge first.
 
 `--sd-access-us`, `--sd-stall-ms` and `--sd-stall-every` set the card's timing; the window shows
-the SD bus load, commands per second, ring misses and audio underruns.
+the SD bus load, commands per second, an estimated CPU load and worst main-loop step (per-unit
+costs from `make deckbench`'s cycle model; deckbench is the measurement), the frame rate, ring
+misses and audio underruns.
 
 `make pwm` checks the model (period tables against tick-by-tick stepping, the filter against
 ngspice), prints THD+N, images and ripple for each variant (8-bit, dual PWM, resistor choices,
