@@ -2,6 +2,19 @@
 
 Newest first. Each entry lists what changed, then the budget measured at that point.
 
+## 2026-11-10: keylock holds the bass's pitch
+
+- Heard on the bench: keylock "changes the pitch a little". Measured on test tones at +8 %:
+  everything under ~200 Hz came out 7.7-7.9 % sharp (it followed the tempo, as varispeed),
+  above 220 Hz within 0.04 %. The search was +-hop/4 (2.9 ms), but a bass note needs up to half
+  its period to line up (10 ms at 50 Hz). Now +-1 hop (11.6 ms) in two passes: coarse, every 8th
+  offset (4th at 22.05 kHz) comparing a whole hop sampled at that stride; then fine, every offset
+  within one coarse step. 45-1000 Hz now within 0.25 % at -8 %, +8 % and +16 %. New test: 50, 80,
+  120 Hz at +8 %, 22.05 and 44.1 kHz (fails on the old search: 50 Hz played at 54 Hz).
+- Budget (XIAO, 22.05 kHz mono, keylock at +8 %): audio 8 % of the core (was 3-5 %), worst block
+  13 % of its deadline (was 5-7 %), 0 dropouts. 44.1 kHz stereo not re-measured (was 16 %).
+- freedj-esp's WSOLA has the same +-2.9 ms search (SEARCH = 128 at 44.1 kHz).
+
 ## 2026-11-10: first sound (PCM5102A on the XIAO)
 
 - Heard on a PCM5102A breakout on the XIAO TFT build (BCK D1, LRCK D2, DIN D6, VIN 5V, FMT

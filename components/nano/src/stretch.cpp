@@ -35,27 +35,31 @@ void Stretch::reset(int32_t frame)
 
 int32_t Stretch::find(const Pcm& pcm, int32_t nominal, int32_t target) const
 {
+    // Search +-1 hop (11.6 ms): bass needs up to half its period to line up (10 ms at 50 Hz).
+    // At +-hop/4 (2.9 ms) everything under ~200 Hz couldn't align and followed the tempo,
+    // 7.8 % sharp at +8 %. Two passes keep the cost down:
+    //   coarse: every `cs`-th offset, comparing a whole hop sampled every `cs`-th (bass decides)
+    //   fine:   every offset within one coarse step, comparing hop/2 every 2nd (detail decides)
     const int hop = win_->hop();
-    const int search = hop / 4;            // +-2.9 ms
-    const int pts = hop / 4;               // compare hop/2 samples, every 2nd
-    int32_t ref[StretchWindow::kMaxHop / 4];
-    for (int k = 0; k < pts; k++) ref[k] = pcm.mono(target + 2 * k);
+    const int search = hop;
+    const int cs = hop / 64 < 2 ? 2 : hop / 64;              // 8 at 44.1 kHz, 4 at 22.05 kHz
+    const int cpts = hop / cs, fpts = hop / 4;
+    int32_t cref[64], fref[StretchWindow::kMaxHop / 4];
+    for (int k = 0; k < cpts; k++) cref[k] = pcm.mono(target + cs * k);
+    for (int k = 0; k < fpts; k++) fref[k] = pcm.mono(target + 2 * k);
 
-    auto score = [&](int32_t c) {
-        uint32_t s = 0;
-        for (int k = 0; k < pts; k++) s += (uint32_t)abs(pcm.mono(c + 2 * k) - ref[k]);
-        return s;
-    };
     int32_t best = nominal;
     uint32_t bestS = UINT32_MAX;
-    for (int32_t d = -search; d <= search; d += 4) {          // coarse
-        uint32_t s = score(nominal + d);
+    for (int32_t d = -search; d <= search; d += cs) {          // coarse
+        uint32_t s = 0;
+        for (int k = 0; k < cpts && s < bestS; k++) s += (uint32_t)abs(pcm.mono(nominal + d + cs * k) - cref[k]);
         if (s < bestS) { bestS = s; best = nominal + d; }
     }
     const int32_t c0 = best;
-    for (int32_t d = -3; d <= 3; d++) {                       // fine
-        if (!d) continue;
-        uint32_t s = score(c0 + d);
+    bestS = UINT32_MAX;
+    for (int32_t d = 1 - cs; d < cs; d++) {                    // fine
+        uint32_t s = 0;
+        for (int k = 0; k < fpts && s < bestS; k++) s += (uint32_t)abs(pcm.mono(c0 + d + 2 * k) - fref[k]);
         if (s < bestS) { bestS = s; best = c0 + d; }
     }
     return best;

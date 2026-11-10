@@ -192,6 +192,20 @@ static void testStretch()
         const int step = maxStep(o16.data() + 2 * 4096, N - 4096);
         CHECK(step < 1300, "speed %.2f: max sample step %d (clicks?)", sp, step);   // sine's own max step ~630
     }
+    // Bass keeps its pitch too: with a +-2.9 ms search, 50-120 Hz followed the tempo (7.8 % sharp at +8 %).
+    for (uint32_t r : {22050u, 44100u}) {
+        StretchWindow wb; wb.build(stretchHop(r));
+        for (int f : {50, 80, 120}) {
+            auto bs = sine(r, (float)f, 8, 1);
+            Pcm bp{bs.data(), (uint32_t)bs.size(), r, 1};
+            Stretch s; s.begin(&wb); s.reset(r / 2);
+            const int M = r * 4;
+            std::vector<int32_t> bo(M * 2);
+            for (int k = 0; k < M; k += 256) s.render(bp, kOne + kOne * 8 / 100, &bo[2 * k], std::min(256, M - k));
+            const double got = zeroCrossings(bo.data() + 2 * 4096, M - 4096) * 0.5 * r / (M - 4096);
+            CHECK(fabs(got / f - 1) < 0.01, "%u Hz: %d Hz bass at +8 %% plays at %.1f Hz (pitch kept)", r, f, got);
+        }
+    }
     // varispeed doubles the pitch at 2x
     int64_t pos = (int64_t)(rate / 2) << 16;
     varispeed(pcm, pos, 2 * kOne, out.data(), N);

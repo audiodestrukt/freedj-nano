@@ -11,12 +11,11 @@
 //
 // two frames at 50 % overlap, a sin^2 window whose halves sum to exactly 1.
 // `cur` is the analysis position (advancing hop * speed per hop), moved by up
-// to +-search to the offset whose start best matches what `prev` would have
-// played next (AMDF on mono, every 2nd sample, coarse then fine search).
+// +-1 hop (11.6 ms, so bass lines up) to the offset whose start best matches what `prev` would have
+// played next (AMDF on mono: a coarse pass over a whole hop, then a fine one).
 // State is a handful of ints plus a shared window table: ~40 bytes per voice.
 //
-// Cost at 44.1 kHz (hop 512, search +-128): ~20 abs-diffs and 4 multiplies per
-// output frame, about 1-2 % of a 160 MHz C6.
+// Cost: measured 8 % of a 160 MHz C6 at 22.05 kHz mono, keylocked at +8 %.
 
 #include <stdint.h>
 #include "nano/pcm.h"
