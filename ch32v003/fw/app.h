@@ -24,7 +24,7 @@ typedef struct {
     uint16_t track, count, sel;   // sel: highlighted in the list
     uint8_t  state, browsing, keylock, err, range;
     int16_t  tempo;               // 1/10 %
-    uint32_t frames, cue, bpmX100;
+    uint32_t frames, cue, bpmX100, firstBeat;
     char     name[TRK_NAME];
     uint8_t  ov[64];              // overview, 128 columns of 0..15
 } app_view;

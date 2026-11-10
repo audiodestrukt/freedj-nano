@@ -2,6 +2,17 @@
 
 Newest first. Each entry lists what changed, then the budget measured at that point.
 
+## 2026-11-10: CH32V003 deck on a 128x64 OLED
+
+- The screen is now the 0.96" SSD1306 128x64 (more common, more room). Same one-page buffer, so
+  no more RAM. Layout: name; time left at double size with BPM at tempo and tempo; PLAY / PAUSE /
+  CUE, an inverted KEY tag, the range; a four-beat bar meter from the beat grid; elapsed and the
+  cue point; the 16 px overview. The list: a "TRACKS n/m" header and 7 names. The emulator
+  follows the multiplex ratio (64 or 32 rows).
+- Budget (`make deckbench`): flash 11.5 KB + ~1.5 KB drivers = ~12.7 of 16 KB (+0.6), RAM 2027
+  of 2048 B (+4: the first beat), CPU 15 % (+0.5), worst step 105 k instructions = 75 % of the
+  ring (the list, was 68 %). 31 sim checks pass.
+
 ## 2026-11-10: the whole CH32V003 deck, simulated
 
 - `ch32v003/fw/`: the deck firmware behind `hal.h`: CDJ transport (CUE back-to-cue / set and

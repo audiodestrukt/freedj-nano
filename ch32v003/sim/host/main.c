@@ -3,7 +3,7 @@
 // The CH32V003 deck on the computer: the real firmware (fw/) on emulated parts.
 //
 //   SD card     sim/emu/sd_emu.c on SPI, holding a FAT32 image (tools/sdimage.py)
-//   OLED        sim/emu/oled_emu.c parsing the I2C stream, drawn in a window
+//   OLED        sim/emu/oled_emu.c (SSD1306 128x64) parsing the I2C stream, drawn in a window
 //   audio       the PWM DMA ring, played at 22,059 Hz (TIM1's rate)
 //   EC11, PLAY, CUE, SHIFT, pot    the keyboard and mouse wheel, as pin levels
 //   USART       a pty (tools: midi_bridge.py --port build/tty), or the DJ2Go read directly
@@ -41,7 +41,7 @@ static const char* o_midi;
 static const char* o_tty = "build/tty";
 static double o_spiMhz = 24, o_accessUs = 300, o_stallMs = 0;
 static unsigned o_stallEvery = 0;
-static int o_scale = 5;
+static int o_scale = 4;
 
 // ---- emulated parts
 static sd_emu   s_sd;
@@ -176,7 +176,7 @@ static void chunk(FILE* f, const char* type, const uint8_t* d, uint32_t n)
 }
 static void writeShot(const char* path, int scale)
 {
-    const int w = 128 * scale, h = 32 * scale, stride = w * 3 + 1;
+    const int w = 128 * scale, h = 64 * scale, stride = w * 3 + 1;
     uint8_t* raw = malloc((size_t)stride * h);
     for (int y = 0; y < h; y++) {
         uint8_t* r = raw + (size_t)y * stride; *r++ = 0;
@@ -375,7 +375,7 @@ static void keyEvent(SDL_Keycode k, int down, int ctrl)
 static int runWindow(void)
 {
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)) { fprintf(stderr, "SDL: %s\n", SDL_GetError()); return 1; }
-    const int W = 128 * o_scale, H = 32 * o_scale, PAD = 12, INFO = 3 * 10 * 2;
+    const int W = 128 * o_scale, H = 64 * o_scale, PAD = 12, INFO = 3 * 10 * 2;
     SDL_Window* win = SDL_CreateWindow("freedj nano: CH32V003 deck (sim)", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                                        W + 2 * PAD, H + 3 * PAD + INFO, 0);
     SDL_Renderer* ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_PRESENTVSYNC);
@@ -425,7 +425,7 @@ static int runWindow(void)
             SDL_SetRenderDrawColor(ren, 5, 8, 16, 255);
             SDL_Rect glass = { PAD - 4, PAD - 4, W + 8, H + 8 }; SDL_RenderFillRect(ren, &glass);
             SDL_SetRenderDrawColor(ren, 0x9F, 0xE8, 0xFF, 255);
-            for (int y = 0; y < 32; y++) for (int x = 0; x < 128; x++)
+            for (int y = 0; y < 64; y++) for (int x = 0; x < 128; x++)
                 if (oled_emu_pixel(&s_oled, x, y)) { SDL_Rect q = { PAD + x * o_scale, PAD + y * o_scale, o_scale - 1, o_scale - 1 }; SDL_RenderFillRect(ren, &q); }
             char l1[160], l2[160], l3[160];
             snprintf(l1, sizeof l1, "pot %4d  %s%s%s%s", s_pot, s_buttons & PIN_PLAY ? "PLAY " : "", s_buttons & PIN_CUE ? "CUE " : "",
@@ -465,7 +465,7 @@ int main(int argc, char** argv)
         else if (!strcmp(a, "--scale") && v) o_scale = atoi(argv[++i]);
         else {
             fprintf(stderr, "usage: %s [--sd IMG] [--script FILE --out DIR] [--midi DEV|auto] [--tty PATH] [--no-pty]\n"
-                            "  [--spi-mhz 24] [--sd-access-us 300] [--sd-stall-ms 0 --sd-stall-every N] [--scale 5]\n", argv[0]);
+                            "  [--spi-mhz 24] [--sd-access-us 300] [--sd-stall-ms 0 --sd-stall-every N] [--scale 4]\n", argv[0]);
             return 2;
         }
     }

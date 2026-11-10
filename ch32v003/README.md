@@ -10,8 +10,8 @@ parts. The plan, the budgets and the results: [../docs/DECK10C.md](../docs/DECK1
 | `lite/` | the engine (`lite.c`, `lite.h`) and the mu-law table and encoder (`ulaw.c`) |
 | `tests/test_lite.cpp` | host tests, some against the C6 engine (`components/nano`) |
 | `bench/` | RV32EC bench: a freestanding program, the runtime bits the toolchain lacks (`rt.c`), and the instruction counter (`count.py`) |
-| `fw/` | the deck firmware: `app.c` (transport, controls, DJ2Go map), `ui.c` (SSD1306 pages), `sd.c` (SD over SPI, streaming reads), `tracks.c` (TRACKS.BIN), Petit FatFs (`pff/`, ChaN, 1-clause BSD), all behind `hal.h` |
-| `sim/host/` | the firmware on the computer: an SDL window (the OLED), sound, keyboard and mouse wheel as the panel, a pty for `midi_bridge.py`, or the DJ2Go read directly; headless with a script |
+| `fw/` | the deck firmware: `app.c` (transport, controls, DJ2Go map), `ui.c` (SSD1306 128x64, a page at a time), `sd.c` (SD over SPI, streaming reads), `tracks.c` (TRACKS.BIN), Petit FatFs (`pff/`, ChaN, 1-clause BSD), all behind `hal.h` |
+| `sim/host/` | the firmware on the computer: an SDL window (the 128x64 OLED), sound, keyboard and mouse wheel as the panel, a pty for `midi_bridge.py`, or the DJ2Go read directly; headless with a script |
 | `sim/emu/` | the emulated parts, shared with the qemu run: an SDHC card on SPI (`sd_emu.c`), an SSD1306 on I2C (`oled_emu.c`) |
 | `sim/qemu/` | the same firmware for RV32EC under qemu-riscv32 with a scripted session: every instruction counted, by part |
 | `sim/test_sim.py` | scripted sessions through the sim, checked (31 checks) |

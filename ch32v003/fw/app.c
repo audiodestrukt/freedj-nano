@@ -39,7 +39,7 @@ static void setFader(int16_t f)
 static void loadNow(uint16_t i)
 {
     if (!trk_get(i, &s_trk)) return;
-    g_app.track = i; g_app.frames = s_trk.frames; g_app.bpmX100 = s_trk.bpmX100;
+    g_app.track = i; g_app.frames = s_trk.frames; g_app.bpmX100 = s_trk.bpmX100; g_app.firstBeat = s_trk.firstBeat;
     g_app.cue = 0; g_app.state = ST_STOP;
     trk_name(i, g_app.name);
     trk_overview(i, g_app.ov);

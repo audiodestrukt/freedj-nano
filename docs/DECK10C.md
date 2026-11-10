@@ -7,7 +7,7 @@ RISC-V microcontroller with 2 KB of RAM. The point is to find out how far freedj
 no-buffers engine stretches; the board around it costs a few dollars. Context: why this chip and
 not the others in the cheap-MCU roundup is in [TARGETS.md](TARGETS.md).
 
-**Goal:** play a track from flash with varispeed and a jog; CUE and PLAY as on a CDJ; a 128x32
+**Goal:** play a track from flash with varispeed and a jog; CUE and PLAY as on a CDJ; a 128x64
 OLED; DJ2Go control. **Stretch goal:** keylock.
 
 ## The chip
@@ -30,7 +30,7 @@ CH32V003F4P6 (TSSOP-20), the part already on the freedj control board:
 | Tracks, fallback | W25Q128 SPI NOR flash, 16 MB | if SD latency spikes turn out to matter: NOR reads start in microseconds. Written by a CH341A programmer with `flashrom` |
 | Audio out | **PWM** from TIM1 + RC filter | see below; mono |
 | Amp / line out | small op-amp line driver, or a PAM8302 for a speaker | |
-| Screen | **SSD1306 128x32** (0.91") on I2C | 512 bytes per frame, drawn a page at a time |
+| Screen | **SSD1306 128x64** (0.96") on I2C | 1 KB per frame, drawn a 128-byte page at a time (so no more RAM than the 128x32) |
 | Controls | EC11 encoder with push (jog / browse), PLAY, CUE, SHIFT buttons, a 10k pitch pot | |
 | MIDI | the USART | DJ2Go through freedj-esp's `midi_bridge.py`, over the WCH-LinkE's own serial port (no adapter needed); DIN MIDI with an optocoupler later |
 
@@ -119,7 +119,7 @@ Engine numbers are measured (phase 0); the rest are estimates until phase 1-3.
 | **CPU**, keylock | 257 per sample on average: **18 %**. The block with the search: 911 per sample, 63 % of real time, absorbed by the DMA ring (4 x 32 samples, so a burst may take up to 3 blocks) |
 | **RAM** | engine (`lite_deck`) **1032 B** (measured), PWM DMA ring 4 x 32 x 2 B = 256 B, stack ~350 B (the search's two reference arrays are 96 B of it), OLED page 128 B, Petit FatFs ~44 B, app ~60 B: **~1.87 of 2 KB**. Margin ~180 B; a half-page OLED buffer would give 64 B more |
 | **Flash** | engine **3.7 KB** (measured: 3.1 KB code + 0.6 KB mu-law table), Petit FatFs ~2.5 KB, SSD1306 + 5x7 font ~1.5 KB, startup and drivers (clock, SPI, I2C, TIM1, DMA) ~1.5 KB, inputs + MIDI + DJ2Go map ~1.5 KB, app ~1.5 KB: **~12 of 16 KB** |
-| **Screen** | 512 bytes per frame over I2C at 400 kHz (~13 ms) or 1 MHz (~5 ms) with DMA: 20-30 fps, in the gaps |
+| **Screen** | 1 KB per frame over I2C at 400 kHz (~23 ms) or 1 MHz (~10 ms) with DMA: 20 fps, in the gaps |
 
 The cycles-per-instruction figure is the open one: QEMU counts instructions exactly, but the
 QingKe V2A's flash wait states and branch costs are assumed (1.5). Phase 1 measures it with
@@ -138,7 +138,8 @@ SysTick; at 3 cycles per instruction keylock would still fit (36 % average).
 2. **Play a track.** Mount the SD card with Petit FatFs, stream a track file through the ring,
    play it at speed 1 and with varispeed. Log the longest read stall per card: that decides SD vs
    the NOR fallback.
-3. **Screen.** SSD1306 page renderer: time remaining, tempo, a 16-pixel waveform strip.
+3. **Screen.** SSD1306 page renderer (written, `fw/ui.c`): name; time left large, BPM at tempo,
+   tempo; state, keylock, range; a four-beat bar meter; elapsed and cue; a 16-pixel overview.
 4. **Controls.** EC11 (jog: nudge / scrub; with SHIFT: browse), PLAY, CUE, the pitch pot, and the
    DJ2Go over the bridge.
 5. **Keylock,** if phase 0 says it fits.
@@ -175,7 +176,7 @@ The firmware for phases 2-5 exists (`ch32v003/fw/`: transport, controls, DJ2Go m
 SD driver, TRACKS.BIN, Petit FatFs) behind a small HAL, and runs two ways before any hardware:
 
 - **On the computer** (`make sim`): emulated SD card (SPI, byte by byte, a FAT32 image), SSD1306
-  (drawn from the I2C bytes), EC11, buttons and pot on the keyboard, the USART as a pty for
+  128x64 (drawn from the I2C bytes), EC11, buttons and pot on the keyboard, the USART as a pty for
   `midi_bridge.py` or the DJ2Go read directly, sound out. `make simtest`: 31 checks over
   scripted sessions (CDJ CUE / PLAY, search, preview, keylock pitch on a 440 Hz tone at +9.8 %,
   the list, DJ2Go notes and CCs, console keys, end of track, a fragmented file and no card).
@@ -185,10 +186,10 @@ SD driver, TRACKS.BIN, Petit FatFs) behind a small HAL, and runs two ways before
 
 | | |
 |---|---|
-| Flash | 10.8 KB measured (engine 3.5, app 2.4, screen 2.2 incl. the font, FAT 1.1, SD 0.9, tracks 0.4) + chip drivers and startup ~1.5 KB = **~12.1 of 16 KB** |
-| RAM | 1403 B of variables (engine 1032) + the 256 B DMA ring + 364 B of stack (deepest seen) = **2023 of 2048 B**: 25 B spare |
-| CPU | **14 %** at 1.5 cycles per instruction (engine 9 %, SPI wait 1 %, SD driver, screen and app ~1 % each) |
-| Worst main-loop step | 95 k instructions, **68 %** of what the ring covers (3 blocks, 4.35 ms): the track list, whose name reads each restart the SD stream (300 us access); keylock searches are ~45 % |
+| Flash | 11.5 KB measured (engine 3.5, screen 2.8 incl. the font, app 2.4, FAT 1.1, SD 0.9, tracks 0.4) + chip drivers and startup ~1.5 KB = **~12.7 of 16 KB** |
+| RAM | 1407 B of variables (engine 1032) + the 256 B DMA ring + 364 B of stack (deepest seen) = **2027 of 2048 B**: 21 B spare |
+| CPU | **15 %** at 1.5 cycles per instruction (engine 9 %, screen 1.4 %, SPI wait, mul/div, SD driver and app ~1 % each) |
+| Worst main-loop step | 105 k instructions, **75 %** of what the ring covers (3 blocks, 4.35 ms): the track list, whose name reads each restart the SD stream (300 us access); keylock searches are ~45 % |
 
 - **SD reads have to stream.** Single-block reads (CMD17, Petit FatFs's way) for 32 bytes at a
   time: 689 commands a second, 33 % of the SPI bus, 66 % of the CPU, and a worst step at 303 %:
@@ -197,15 +198,18 @@ SD driver, TRACKS.BIN, Petit FatFs) behind a small HAL, and runs two ways before
   then no FAT lookups after the mount (Petit's `pf_lseek` walks the cluster chain from the
   start on every backward seek).
 - **Found:** `lite_pos()` jumped back a hop at every hop's end in keylock (fixed, tested).
-- **Margins:** 25 B of RAM; a card read stall longer than ~1.4 ms in the list view (~2.5 ms while
+- **Margins:** 21 B of RAM; a card read stall longer than ~1.1 ms in the list view (~2.5 ms while
   playing) drops audio at 1.5 cycles per instruction, less at more. Phase 2 logs real stalls.
+  The list could read its names only while paused, or one name per frame, if that's too close.
+- The screen went from 128x32 to 128x64 the same day (more UI; the 0.96" is the common one):
+  +0.6 KB flash, +4 B RAM, +0.5 % CPU.
 
 ## Shopping list
 
 - CH32V003F4P6 dev boards, **with the WCH-LinkE**
 - microSD breakout for 3.3 V (SPI), and a small, fast card (any A1-rated card)
 - (fallback) W25Q128 SPI flash breakout and a CH341A programmer with a SOIC-8 clip
-- SSD1306 0.91" 128x32 I2C OLED
+- SSD1306 0.96" 128x64 I2C OLED
 - EC11 encoder with push switch, 3 tact switches, a 10k pot
 - 1 % resistors for the dual-PWM sum (1k, 267k; 255k and 270k to try), the filter (2 x 10k,
   15 nF, 3.3 nF, 820 pF, C0G), and an op-amp (MCP6002) for the Sallen-Key and as a line driver
@@ -222,9 +226,9 @@ tests with the C6 build.
   of mu-law at 22.05 kHz, but the keylock keeps most of it in use, against the occasional
   10 ms+ stall: reads have to run ahead of the playhead with some slack.
 - Does Petit FatFs fit next to everything else in 16 KB? (estimated ~12 KB total)
-- Cycles per instruction on the QingKe V2A (phase 1): the whole deck is 14 % at 1.5, 27 % at 3;
-  its worst step (the list) 68 % of the ring at 1.5, over it at 2.2.
-- RAM: 25 B spare. If the chip's HAL needs more, the FATFS object (~40 B, only used at mount)
+- Cycles per instruction on the QingKe V2A (phase 1): the whole deck is 15 % at 1.5, 29 % at 3;
+  its worst step (the list) 75 % of the ring at 1.5, over it at 2.0.
+- RAM: 21 B spare. If the chip's HAL needs more, the FATFS object (~40 B, only used at mount)
   can share memory with the screen's page buffer.
 - Dual PWM is good enough on paper (it beats mu-law). Are the 22.05 kHz images? Listen to
   `ch32v003/build/out/pwm_*.wav` against `pwm_reference.wav`; if they're not, 2x interpolation
