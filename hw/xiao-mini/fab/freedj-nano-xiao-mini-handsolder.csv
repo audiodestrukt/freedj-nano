@@ -1,0 +1,7 @@
+Comment,Designator,Footprint,Note
+J2,J2,pin_header_pinrow4,pin header — hand solder
+J3,J3,pin_header_pinrow3,pin header — hand solder
+J5,J5,pin_header_pinrow2,pin header — hand solder
+470,"R2,R3",resistor_res0402,
+Seeed_XIAO_socketed,U2,Seeed_XIAO_socketed,
+via,"V1,V2,V3,V4",via,

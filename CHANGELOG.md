@@ -2,6 +2,16 @@
 
 Newest first. Each entry lists what changed, then the budget measured at that point.
 
+## 2026-11-10: hw/xiao-mini, a carrier board for the XIAO ESP32-C6 deck
+
+- A 72 x 46 mm 2-layer board (tscircuit source, routed headless with the pcb-layout skill's
+  route2: Freerouting, KiCad DRC under JLCPCB rules) that wires what the C6 firmware's XIAO
+  OLED pin map expects: PCM5102A DAC -> 3.5 mm line out, OLED header, EC11 with push, four
+  buttons on the ADC ladder (0 / 2k2 / 4k7 / 10k), MIDI-in header for the bridge, JST-PH LiPo
+  socket. 0 shorts, 0 open, DRC and DFM clean; Gerbers, drill, CPL and BOMs in `fab/`.
+- To check before ordering: the jack's pinout (no drawing found), the OLED module's pin order,
+  an LCSC number for the 470 R output resistors.
+
 ## 2026-11-10: docs/CHIPS.md
 
 - Chip options for the small decks, to come back to: what limits the CH32V003 (2 KB RAM, no

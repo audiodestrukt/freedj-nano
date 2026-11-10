@@ -1,0 +1,8 @@
+node_modules/
+build/
+dist/
+route-evals/
+*.kicad_prl
+fp-info-cache
+*.lck
+index.circuit.kicad_pcb.routing.json
