@@ -157,6 +157,36 @@ static void testPosMonotonic()
         }
 }
 
+// Backwards (scrubbing): a negative speed, varispeed, refilling the ring below as it goes.
+static void testReverse()
+{
+    for (float sp : {-1.0f, -2.5f, -0.3f}) {
+        Lite L(tone(440, 10));
+        lite_seek(&L.d, kRate * 8);
+        lite_set_keylock(&L.d, 1);                        // ignored backwards
+        lite_set_speed(&L.d, (int32_t)lrintf(sp * 65536)); lite_play(&L.d, 1);
+        L.run(512);
+        const int32_t p0 = lite_pos(&L.d);
+        const int n = kRate * 2;
+        auto o = L.run(n);
+        const double moved = lite_pos(&L.d) - p0;
+        CHECK(fabs(moved - n * sp) < 64, "backwards %.1f: moved %.0f frames, want %.0f", sp, moved, n * sp);
+        const double got = freqOf(o.data(), (int)o.size());
+        CHECK(fabs(got / (440 * -sp) - 1) < 0.01, "backwards %.1f: 440 Hz plays at %.1f Hz", sp, got);
+        CHECK(!L.d.stretch && L.d.misses == 0, "backwards %.1f: varispeed, %u misses", sp, L.d.misses);
+        const int own = (int)(6.2832 * 440 * -sp / kRate * 12000 * 1.15);   // the tone's own slope, + mu-law
+        CHECK(maxStep(o.data(), (int)o.size()) < own, "backwards %.1f: clicks at the refills (step %d, the tone's %d)", sp, maxStep(o.data(), (int)o.size()), own);
+    }
+    // back and forth, as a scratch
+    Lite L(music(10));
+    lite_seek(&L.d, kRate * 5); lite_play(&L.d, 1);
+    for (int r = 0; r < 40; r++) {
+        lite_set_speed(&L.d, (r & 1) ? 0x30000 : -0x30000);
+        L.run(2205);
+    }
+    CHECK(L.d.misses == 0 && abs(lite_pos(&L.d) - (int32_t)kRate * 5) < 300, "scratch back and forth: pos %d, %u misses", lite_pos(&L.d), L.d.misses);
+}
+
 static void testQuality()
 {
     auto m = music(10);
@@ -197,6 +227,7 @@ int main()
     testPitch();
     testSpeedAndRings();
     testPosMonotonic();
+    testReverse();
     testQuality();
     printf("%d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;

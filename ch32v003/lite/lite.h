@@ -51,7 +51,7 @@ typedef struct {
     int32_t  base;           // first frame fetched since the last seek
     uint16_t misses;
     // transport
-    int32_t  speed;          // Q16, >= 0
+    int32_t  speed;          // Q16; negative plays backwards (varispeed only: scrubbing)
     uint8_t  playing, keylock;
     uint8_t  stretch;        // engine in use: 1 = keylock, 0 = varispeed
     int8_t   fadeDir;        // -1 fading out, +1 fading in, 0 steady
@@ -66,7 +66,8 @@ typedef struct {
 
 void    lite_init(lite_deck* d, const lite_src* src);
 void    lite_play(lite_deck* d, int on);
-void    lite_set_speed(lite_deck* d, int32_t speedQ16);
+void    lite_set_speed(lite_deck* d, int32_t speedQ16);  // < 0: backwards, varispeed, refilling the
+                                                         // ring below as it goes (a card jump each ~700 frames)
 void    lite_set_keylock(lite_deck* d, int on);
 void    lite_seek(lite_deck* d, int32_t frame);        // fades out, jumps, fades in
 int32_t lite_pos(const lite_deck* d);                  // frames

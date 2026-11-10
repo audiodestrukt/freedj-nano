@@ -55,11 +55,24 @@ static void fetch(lite_deck* d, int32_t upto)
     }
 }
 
+// Playing backwards (a negative speed: scrubbing): the read fell below the ring. Refill it so
+// p sits near its top, with one forward read from the card (one jump per ~700 frames back).
+static __attribute__((noinline)) void refillBelow(lite_deck* d, int32_t p)
+{
+    int32_t b = (p - (LITE_RING - 64)) & ~31;
+    if (b < 0) b = 0;
+    d->head = d->base = d->rbase = b;
+    fetch(d, b + LITE_RING);
+}
+
 static inline __attribute__((always_inline)) int16_t sample(lite_deck* d, int32_t p)
 {
     if (p < 0 || p >= (int32_t)d->src.frames) return 0;
     if (p >= d->head) fetch(d, p + 1);
-    if (p < d->base || p < d->head - LITE_RING) { d->misses++; return 0; }
+    if (p < d->base || p < d->head - LITE_RING) {
+        if (d->speed >= 0) { d->misses++; return 0; }     // forward: a bug, the tests count these
+        refillBelow(d, p);
+    }
     return lite_ulaw[d->ring[ridx(d, p)]];
 }
 
@@ -236,7 +249,7 @@ void lite_play(lite_deck* d, int on)
     else if (!on && d->playing) d->fadeDir = -1;           // `playing` clears when the fade ends
 }
 
-void lite_set_speed(lite_deck* d, int32_t s) { d->speed = s < 0 ? 0 : s; }
+void lite_set_speed(lite_deck* d, int32_t s) { d->speed = s; }
 void lite_set_keylock(lite_deck* d, int on) { d->keylock = (uint8_t)(on != 0); }
 
 void lite_render(lite_deck* d, int16_t* out, int n)
