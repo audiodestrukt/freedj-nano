@@ -33,6 +33,7 @@ bool begin(uint32_t rate)
     sc.clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(rate);
     sc.slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO);
     sc.slot_cfg.slot_bit_width = I2S_SLOT_BIT_WIDTH_32BIT;   // BCK = 64 fs: the PCM5102A's PLL locks on it without MCLK
+    sc.slot_cfg.ws_width = 32;   // default is the data width (16): WS flips mid-slot and the right channel is lost
     sc.gpio_cfg.mclk = I2S_GPIO_UNUSED;
     sc.gpio_cfg.bclk = board::I2S_BCK;
     sc.gpio_cfg.ws = board::I2S_WS;

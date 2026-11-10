@@ -2,6 +2,16 @@
 
 Newest first. Each entry lists what changed, then the budget measured at that point.
 
+## 2026-11-10: first sound (PCM5102A on the XIAO)
+
+- Heard on a PCM5102A breakout on the XIAO TFT build (BCK D1, LRCK D2, DIN D6, VIN 5V, FMT
+  set to I2S). Only the left channel played at first: with 32-bit slots for 16-bit samples,
+  ESP-IDF's Philips default sets the WS width to the data width (16 BCKs), so WS flipped mid-slot
+  and the DAC never framed the right channel. `ws_width = 32` fixes it, and it sounds cleaner too
+  (the left channel was likely misframed as well).
+- Budget: playing at speed 1, audio 1.4-1.5 % of the core, worst block 2 % of its deadline,
+  0 dropouts; UI 15.9 ms/frame at 62 KB/frame.
+
 ## 2026-11-09 (night): rekordbox data
 
 - `tools/rekordbox.py` reads a rekordbox USB export's analysis files (PIONEER/USBANLZ, per

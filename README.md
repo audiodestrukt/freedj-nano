@@ -5,8 +5,8 @@ little sibling of [freedj-esp](../freedj-esp), which needs two cores, an FPU and
 S3, A1S). The two repos share the deck's vocabulary (`deck::Event`, the DJ2Go map) but not
 the engine: everything here is fixed-point and allocation-free in the audio path.
 
-Status (2026-11-08): **runs on the XIAO ESP32C6, not heard yet** (no DAC on the bench). It
-boots, maps the tracks, clocks I2S, and plays, cues and keylocks from the serial console at
+Status (2026-11-10): **runs and plays audio on the XIAO ESP32C6** through a PCM5102A. It
+boots, maps the tracks, and plays, cues and keylocks from the serial console at
 5 % of the core. The portable core passes its host tests (keylock pitch, speed and level,
 click-free transitions, the UI layouts); the firmware builds for three configs.
 
