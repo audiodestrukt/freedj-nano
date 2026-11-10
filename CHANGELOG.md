@@ -2,6 +2,14 @@
 
 Newest first. Each entry lists what changed, then the budget measured at that point.
 
+## 2026-11-10: docs/CHIPS.md
+
+- Chip options for the small decks, to come back to: what limits the CH32V003 (2 KB RAM, no
+  I2S, no multiply, 16 pins, no USB host) and what it sounds like (mu-law noise, 22 kHz, mono);
+  the CH32V002 / V006 / V203 / V30x and the RP2350 compared; five scenarios, from the V003 as
+  is, to a V006 with 4x the RAM, to a CH32V203 + PCM5102A at 16-bit stereo 44.1 kHz with the
+  DJ2Go on its USB host (no I2S on the V203, so SPI + a timer for the DAC's clocks).
+
 ## 2026-11-10: docs/DECK10C-CONTROLS.md (undecided)
 
 - The CH32V003 deck's controls, written up to come back to: all 16 usable pins are taken (the

@@ -12,6 +12,9 @@ OLED; DJ2Go control. **Stretch goal:** keylock.
 
 ## The chip
 
+Other chips (CH32V006 with 8 KB, CH32V203 with a DAC and USB host, the V30x, the RP2350) and
+what each would sound like: [CHIPS.md](CHIPS.md).
+
 CH32V003F4P6 (TSSOP-20), the part already on the freedj control board:
 
 | | |
