@@ -2,6 +2,24 @@
 
 Newest first. Each entry lists what changed, then the budget measured at that point.
 
+## 2026-11-10: CH32V003 phase 0, nano-lite fits
+
+- `ch32v003/`: nano-lite, the deck engine in C for the 10-cent chip (RV32EC, no multiply, 2 KB
+  RAM). Streams a mono 22.05 kHz mu-law track through a 768-byte ring plus a 192-byte 4:1
+  decimated copy for the keylock's coarse search; varispeed; keylock with the +-1 hop search,
+  clamped so every read fits in the rings; 1.5 ms fades on jumps, starts, stops and engine
+  switches. Host tests (83 checks, some against the C6 engine) and an RV32EC bench: the ESP-IDF
+  image's GCC for `rv32ec`/`ilp32e`, qemu-riscv32 `rv32e,c=true` counting every instruction.
+- Budget (22.05 kHz mono, instructions per sample; CPU at an assumed 1.5 cycles each, 48 MHz):
+  varispeed 87 (1.00) / 144 (1.08), 6-10 %; keylock at 1.08 257 average, 18 %, worst block 911,
+  63 % of real time (a 4 x 32-sample DMA ring absorbs it). Engine 3.7 KB flash (3.1 KB code,
+  0.6 KB mu-law table), 1032 B RAM, no multiply or divide instructions.
+- Got there from 613 instructions per sample with the search block at 222 % of real time: one
+  fetch per search and direct ring reads (was a checked read per sample), centre-out scanning
+  (ties went to the most negative offset), forced inlining under -Os, coarse every 8th offset.
+- docs/DECK10C.md: phase 0 results, measured budgets, the PWM timing (48 MHz / 272, a sample every
+  8 periods = 22,059 Hz).
+
 ## 2026-11-10: keylock holds the bass's pitch
 
 - Heard on the bench: keylock "changes the pitch a little". Measured on test tones at +8 %:

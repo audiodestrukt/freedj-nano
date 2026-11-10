@@ -1,6 +1,7 @@
 # The 10-cent DJ deck (plan)
 
-Status: plan, 2026-11-09. Nothing built yet. A DJ deck around the **CH32V003**, a 10-cent
+Status: plan, 2026-11-09; phase 0 done 2026-11-10 (the engine runs in the emulator, see
+[Phase 0 results](#phase-0-results-2026-11-10)). No hardware yet. A DJ deck around the **CH32V003**, a 10-cent
 RISC-V microcontroller with 2 KB of RAM. The point is to find out how far freedj-nano's
 no-buffers engine stretches; the board around it costs a few dollars. Context: why this chip and
 not the others in the cheap-MCU roundup is in [TARGETS.md](TARGETS.md).
@@ -58,43 +59,48 @@ buffer updates the duty cycles, so the CPU doesn't take an interrupt per sample.
 nano's engine (`components/nano`) is C++ with atomics, Q16 positions and a 1 KB window table.
 On the CH32V003 it becomes a small C port, "nano-lite", that keeps the same ideas:
 
-- **Tracks streamed forward through a small ring, not memory mapping.** Everything the engine
-  reads stays near the playhead: playback reads straight ahead, and keylock's two overlapping
-  frames and its ±64-sample search together span about 2 hops + the search, ~576 samples at
-  22.05 kHz. So one ring of ~1 KB (16-bit) or ~576 B (8-bit µ-law), refilled by sequential
-  multi-block SD reads (CMD18), covers it with no random seeks. Only jumps (cue, load, a long
-  scratch back) seek, with a short gap, as on a CDJ.
-- **Linear crossfade instead of the sin² table.** WSOLA's two halves still sum to exactly 1, the
-  weights step by addition, and the 512-byte table goes. Slightly more audible at the seams; listen
-  and compare in the host tests.
-- **Multiplies only where they're needed.** Software multiply costs ~30-100 cycles on RV32EC. Two
-  per sample for the crossfade; varispeed interpolation by an 8-bit fraction (shift and add), or
-  nearest-sample at speed 1.0.
-- **8-bit decimated search.** The AMDF search compares a downsampled 8-bit copy of the window:
-  256 bytes, and cheaper comparisons.
+- **Tracks streamed forward through two small rings, not memory mapping.** Everything the
+  engine reads stays near the playhead, so storage is read sequentially; only jumps (cue, load)
+  seek, with a 1.5 ms fade out and in. A 768-byte ring of 8-bit mu-law at full rate (35 ms) is
+  what's played; a 192-byte copy decimated 4:1 is what the keylock's coarse search reads. The
+  search has to reach +-1 hop (11.6 ms) so bass can line up (see the C6's 2026-11-10 fix), and
+  every read it and the coming hop make has to fit in the ring at once: it's clamped to make sure.
+- **Linear crossfade instead of the sin^2 table.** WSOLA's two halves still sum to exactly 1, and
+  it's one 8-bit multiply per sample.
+- **Multiplies by shift and add.** RV32EC has no multiply instruction; the engine compiles to none.
+  Crossfade and interpolation weights are 8-bit, so a multiply is 8 tests and adds.
+- **Two-pass search:** coarse, every 8th offset over +-1 hop on the decimated ring (32 points =
+  hop/2); fine, +-7 at full rate (32 points, every 2nd sample). Centre out, so among equally
+  good matches (every period of a tone) the nearest wins: offsets stay small and the rings can.
 - **Same track data, one file per track.** On SD, `pack_tracks.py` writes each track as its own
   file (the pack entry's PCM, peaks and grid), 22.05 kHz mono, 44 KB/s at 16 bits; on NOR flash it's
   the same pack image as the C6's. The peak table gives the OLED its waveform strip; rekordbox grids
   work as on the C6. MP3s from a rekordbox SD export can't play directly: no decoder fits.
 
-### Budgets (estimates: phase 0 measures them)
+### Budgets
 
-| | Estimate |
+Engine numbers are measured (phase 0); the rest are estimates until phase 1-3.
+
+| | |
 |---|---|
-| **CPU**, varispeed | ~5 % of 48 MHz (one PWM DMA refill per block, a shift-add interpolation per sample) |
-| **CPU**, keylock | ~15-25 %: 2 software multiplies plus ~10 abs-diffs of search per output sample |
-| **RAM** | stack 512 B, OLED page 128 B, track ring ~576 B (µ-law) to 1 KB (16-bit), PWM DMA buffer 2 x 64 B, deck state ~100 B, Petit FatFs ~40 B: **~1.5-1.9 of 2 KB** (µ-law gives the margin) |
-| **Flash** | engine ~4 KB, OLED page renderer + 5x7 font ~2 KB, SSD1306 + SD + PWM drivers ~2 KB, Petit FatFs ~2-4 KB, inputs ~1 KB, MIDI parser + DJ2Go map ~1.5 KB: **~12-15 of 16 KB**: tight; phase 0 checks it |
+| **CPU**, varispeed | 87-144 instructions per sample (speed 1.00 / 1.08): **6-10 %** of 48 MHz at 1.5 cycles per instruction |
+| **CPU**, keylock | 257 per sample on average: **18 %**. The block with the search: 911 per sample, 63 % of real time, absorbed by the DMA ring (4 x 32 samples, so a burst may take up to 3 blocks) |
+| **RAM** | engine (`lite_deck`) **1032 B** (measured), PWM DMA ring 4 x 32 x 2 B = 256 B, stack ~350 B (the search's two reference arrays are 96 B of it), OLED page 128 B, Petit FatFs ~44 B, app ~60 B: **~1.87 of 2 KB**. Margin ~180 B; a half-page OLED buffer would give 64 B more |
+| **Flash** | engine **3.7 KB** (measured: 3.1 KB code + 0.6 KB mu-law table), Petit FatFs ~2.5 KB, SSD1306 + 5x7 font ~1.5 KB, startup and drivers (clock, SPI, I2C, TIM1, DMA) ~1.5 KB, inputs + MIDI + DJ2Go map ~1.5 KB, app ~1.5 KB: **~12 of 16 KB** |
 | **Screen** | 512 bytes per frame over I2C at 400 kHz (~13 ms) or 1 MHz (~5 ms) with DMA: 20-30 fps, in the gaps |
+
+The cycles-per-instruction figure is the open one: QEMU counts instructions exactly, but the
+QingKe V2A's flash wait states and branch costs are assumed (1.5). Phase 1 measures it with
+SysTick; at 3 cycles per instruction keylock would still fit (36 % average).
 
 ## Phases
 
-0. **Measure on the computer.** Write nano-lite in C, test it on the host against the C6 engine
-   (pitch, speed, clicks, the WAV files), then compile it for RV32EC (`-march=rv32ec_zicsr
-   -mabi=ilp32e`) and count cycles per sample in an instruction-set simulator. Decides: keylock
-   or varispeed-only, and whether the flash budget holds.
+0. **Measure on the computer.** Done: see below.
 1. **Bring-up.** WCH-LinkE + `minichlink` (ch32fun), blink, then a PWM test tone through the RC
-   filter. Listen to 8-bit against the dual-PWM 16-bit.
+   filter. Listen to 8-bit against the dual-PWM 16-bit. TIM1 at 48 MHz / 272 = 176.5 kHz with the
+   repetition counter at 7 gives a sample every 8 periods: **22,059 Hz**, within 0.04 % of
+   22.05 kHz, so DMA can update the duty cycles once per sample. Measure cycles per instruction
+   with SysTick around `lite_render`.
 2. **Play a track.** Mount the SD card with Petit FatFs, stream a track file through the ring,
    play it at speed 1 and with varispeed. Log the longest read stall per card: that decides SD vs
    the NOR fallback.
@@ -104,6 +110,27 @@ On the CH32V003 it becomes a small C port, "nano-lite", that keeps the same idea
 5. **Keylock,** if phase 0 says it fits.
 6. **A board.** A small PCB in the style of `ctrl-pcb` (tscircuit, JLCPCB-stocked parts): CH32V003,
    a microSD socket, the PWM filter, a 3.5 mm jack, the OLED header, the encoder and buttons.
+
+## Phase 0 results (2026-11-10)
+
+`ch32v003/` builds nano-lite twice: on the computer against the C6 engine (`make test`), and
+for RV32EC (`-march=rv32ec_zicsr -mabi=ilp32e -Os`) in the ESP-IDF image's GCC, run under
+`qemu-riscv32 -cpu rv32e,c=true` with a per-instruction trace (`make bench`).
+
+- **It fits.** Keylock 18 % of the CPU on average, varispeed 6-10 %; engine 3.7 KB of flash and
+  1032 bytes of RAM, no multiply or divide instructions. So the deck isn't varispeed-only.
+- **Quality:** pitch kept within 1 % for 50 Hz-1 kHz tones at -8 %, +8 % and +16 % (bass
+  included); mu-law playback 37 dB SNR; keylock level matches the C6 engine's. Listening files:
+  `ch32v003/build/out/` (source, lite and C6 keylock at +8 %).
+- **Rings:** 0 reads outside them at 0.5x to 2x, keylock and varispeed, and across 200 random
+  seeks, engine switches and tempo moves (no clicks above the music's own steps).
+- **What it took** (first try to last): a 512-byte ring was too small for the +-1 hop search
+  (the coarse pass reads ahead and evicted the frame still fading out), so 768; the search
+  scanned from -hop up, so ties went to the most negative offset and stretched the span, so
+  centre out; checked reads cost 200k instructions per search (222 % of real time in that block),
+  so one fetch up front and direct ring reads; `-Os` didn't inline the per-sample reads, so
+  forced; coarse every 8th offset instead of 4th. 613 -> 257 instructions per sample.
+- **Still unknown:** cycles per instruction on the real core, SD stalls, PWM sound. Phase 1-2.
 
 ## Shopping list
 
@@ -123,11 +150,11 @@ tests with the C6 build.
 
 ## Open questions
 
-- SD read stalls: how long, how often, per card (phase 2 logs it)? A ~1 KB ring holds ~23 ms of
-  16-bit audio at 22.05 kHz, or ~26 ms of µ-law, against the occasional 10 ms+ stall.
-- Does Petit FatFs fit next to everything else in 16 KB?
-- Does keylock fit (phase 0)? If it's borderline, an 11.025 kHz keylock mode is a fallback.
+- SD read stalls: how long, how often, per card (phase 2 logs it)? The 768-byte ring holds 35 ms
+  of mu-law at 22.05 kHz, but the keylock keeps most of it in use, against the occasional
+  10 ms+ stall: reads have to run ahead of the playhead with some slack.
+- Does Petit FatFs fit next to everything else in 16 KB? (estimated ~12 KB total)
+- Cycles per instruction on the QingKe V2A (phase 1): keylock is 18 % at 1.5, 36 % at 3.
 - Is dual-PWM good enough to DJ with, or does this deck want a cheap I2S DAC? There's no I2S
   peripheral; bit-banged I2S at 22 kHz would cost most of the CPU.
-- 8-bit µ-law in the pack: twice the music in the same flash, one table lookup per sample.
 - Stereo: TIM1 has four channels, enough for two dual-PWM outputs; costs RAM and CPU.
