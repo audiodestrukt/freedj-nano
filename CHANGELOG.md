@@ -2,6 +2,22 @@
 
 Newest first. Each entry lists what changed, then the budget measured at that point.
 
+## 2026-11-10: CH32V003 PWM output modelled
+
+- `ch32v003/sim/pwm_sim.py` (`make pwm`): TIM1's two PWM pins, the 1 : 256 resistor sum (with
+  tolerances and the pins' output resistance) and the filter, solved exactly per PWM period from
+  the circuit's state-space model, period-averaged and decimated to 44.1 kHz. Checked against
+  tick-by-tick stepping (4e-14 V) and ngspice AC (0.000 dB). Prints THD+N, images and ripple per
+  variant and renders a track through each for listening.
+- Found: edge-aligned PWM (the plan) has a 2nd harmonic at -48 dB at 1 kHz, from pulse centres
+  moving with duty; centre-aligned at 88.2 kHz is -76 dB. R2 267k (256 x (1k + ~40 ohm pin))
+  instead of 255k: -43.6 vs -36.3 dB THD+N at -40 dBFS. A pole + Q = 1 Sallen-Key on the MCP6002:
+  ripple 55 -> 6 mVpp. Every dual-PWM variant beats the mu-law track (-37.6 dB); one 8-bit pin
+  is -14 dB at -40 dBFS. Left to hear: the 22.05 kHz images (12.05 kHz image of a 10 kHz tone
+  at -5 dB); 2x interpolation on the chip takes the 5 kHz one from -26 to -35 dB.
+- docs/DECK10C.md: the results table, centre-aligned TIM1 timing (48 MHz / 544, repetition
+  counter 7 = 22,059 Hz), filter values, open question now the images, not dual PWM.
+
 ## 2026-11-10: CH32V003 phase 0, nano-lite fits
 
 - `ch32v003/`: nano-lite, the deck engine in C for the 10-cent chip (RV32EC, no multiply, 2 KB

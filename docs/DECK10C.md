@@ -35,11 +35,42 @@ CH32V003F4P6 (TSSOP-20), the part already on the freedj control board:
 
 ### Audio: PWM
 
-No I2S, so audio is PWM from TIM1 with a low-pass filter. 8 bits at a 187.5 kHz carrier
-(48 MHz / 256) is easy to filter but noisy. Better: **two 8-bit channels summed through resistors
-weighted 1 : 256** (TIM1 CH1 for the high byte, CH2 for the low byte), which gives about 14-16 bits
-of usable resolution at the same carrier. The sample rate is 22.05 kHz; DMA from a small
-buffer updates the duty cycles, so the CPU doesn't take an interrupt per sample.
+No I2S, so audio is PWM from TIM1: **two 8-bit channels summed through resistors weighted
+1 : 256** (CH1 the high byte through R1, CH2 the low byte through R2), then a low-pass filter.
+The sample rate is 22.05 kHz; DMA from a small buffer updates the duty cycles, so the CPU
+doesn't take an interrupt per sample.
+
+Modelled before there's hardware: `ch32v003/sim/pwm_sim.py` (`make pwm`) solves the real
+network exactly, pulse by pulse (checked tick by tick and against ngspice), and renders WAVs.
+THD+N in 20 Hz-20 kHz, tones at -6 dBFS; 1 % parts the worst way round, 40 ohm pins:
+
+| | 1 kHz | 5 kHz | 1 kHz at -40 dBFS | 12.05 kHz image of 10 kHz | carrier ripple |
+|---|---|---|---|---|---|
+| mu-law track, perfect 22.05 kHz DAC | -37.6 dB | -37.5 | -35.5 | -19.9 | |
+| 8-bit, one pin, edge-aligned, RC-RC | -43.8 | -20.2 | **-14.1** | -3.3 | 14 mVpp |
+| dual, R2 255k, edge-aligned, RC-RC | -47.8 | -20.2 | -36.3 | -3.3 | 14 mVpp |
+| dual, R2 267k, edge-aligned, RC-RC | -47.8 | -20.2 | -43.6 | -3.3 | 14 mVpp |
+| dual, R2 267k, **centre-aligned**, RC-RC | **-76.2** | -20.6 | -48.4 | -3.4 | 55 mVpp |
+| dual, R2 267k, centre-aligned, **Sallen-Key** | -75.1 | -25.9 | -46.9 | -4.9 | 6 mVpp |
+| the same with 2x interpolation on the chip | -75.4 | -34.5 | -47.2 | -6.2 | 6 mVpp |
+
+- **Centre-aligned, not edge-aligned.** An edge-aligned pulse's centre moves with its width: a
+  2nd harmonic at -48 dB for 1 kHz, rising with frequency. Centre-aligned pulses don't move:
+  -76 dB. It halves the carrier to 88.2 kHz, so the filter has to work harder.
+- **R2 = 267k**: 256 x (R1 + the pin's output resistance), the nearest E96. 255k is 7 dB worse
+  at low level. The 40 ohms is a guess: measure it in phase 1 and pick R2 from it.
+- **Filter: a pole (R1 + 15 nF) and a unity-gain Q = 1 Sallen-Key** (10k, 10k, 3.3 nF, 820 pF)
+  on the MCP6002 that's there anyway, about 3rd-order Butterworth at 10 kHz: ripple 55 -> 6 mVpp,
+  -19 dB at 20 kHz.
+- **The PWM isn't the limit, mu-law is.** Every dual-PWM row beats the track format; one 8-bit
+  pin doesn't at low level (-14 dB at -40 dBFS: quiet passages and fades turn to grit).
+- **What's left to hear: the 22.05 kHz images.** Content at f also comes out at 22.05 - f: 5 kHz
+  puts 17.05 kHz in band (the 5 kHz column), and no cheap filter separates 10 kHz from 12 kHz.
+  2x linear interpolation on the chip pushes the mid images down 9 dB, but doubles the DMA ring
+  (512 B, against ~180 B of RAM margin) unless the blocks get smaller. Packing tracks band-limited
+  to ~9 kHz is free.
+- **Supply noise goes straight to the output** (the pins swing rail to rail): 1 mV rms on VDD is
+  hiss at -74 dB on silence and caps THD+N at -67 dB. A clean 3.3 V, an LDO and an RC on VDD.
 
 ### Draft pins (check against the datasheet before wiring)
 
@@ -96,11 +127,13 @@ SysTick; at 3 cycles per instruction keylock would still fit (36 % average).
 ## Phases
 
 0. **Measure on the computer.** Done: see below.
-1. **Bring-up.** WCH-LinkE + `minichlink` (ch32fun), blink, then a PWM test tone through the RC
-   filter. Listen to 8-bit against the dual-PWM 16-bit. TIM1 at 48 MHz / 272 = 176.5 kHz with the
-   repetition counter at 7 gives a sample every 8 periods: **22,059 Hz**, within 0.04 % of
-   22.05 kHz, so DMA can update the duty cycles once per sample. Measure cycles per instruction
-   with SysTick around `lite_render`.
+1. **Bring-up.** WCH-LinkE + `minichlink` (ch32fun), blink, then a PWM test tone through the
+   filter. TIM1 centre-aligned with ARR 272: 48 MHz / 544 = 88.2 kHz, and the repetition counter
+   at 7 (it counts half periods in this mode) gives a sample every 4 periods: **22,059 Hz**,
+   within 0.04 % of 22.05 kHz, so DMA can update the duty cycles once per sample. Make the update
+   land where both pins are low, not mid-pulse. Measure the pins' output resistance (for R2),
+   compare a tone with the model (`make pwm`), and measure cycles per instruction with SysTick
+   around `lite_render`.
 2. **Play a track.** Mount the SD card with Petit FatFs, stream a track file through the ring,
    play it at speed 1 and with varispeed. Log the longest read stall per card: that decides SD vs
    the NOR fallback.
@@ -130,7 +163,10 @@ for RV32EC (`-march=rv32ec_zicsr -mabi=ilp32e -Os`) in the ESP-IDF image's GCC, 
   centre out; checked reads cost 200k instructions per search (222 % of real time in that block),
   so one fetch up front and direct ring reads; `-Os` didn't inline the per-sample reads, so
   forced; coarse every 8th offset instead of 4th. 613 -> 257 instructions per sample.
-- **Still unknown:** cycles per instruction on the real core, SD stalls, PWM sound. Phase 1-2.
+- **PWM output** modelled since (see Audio: PWM): dual PWM, centre-aligned, beats the mu-law
+  track it plays.
+- **Still unknown:** cycles per instruction on the real core, SD stalls, the pins' output
+  resistance and the board's supply noise. Phase 1-2.
 
 ## Shopping list
 
@@ -139,8 +175,8 @@ for RV32EC (`-march=rv32ec_zicsr -mabi=ilp32e -Os`) in the ESP-IDF image's GCC, 
 - (fallback) W25Q128 SPI flash breakout and a CH341A programmer with a SOIC-8 clip
 - SSD1306 0.91" 128x32 I2C OLED
 - EC11 encoder with push switch, 3 tact switches, a 10k pot
-- Resistors and capacitors for the dual-PWM sum and the RC filter (2nd order, ~10 kHz cut-off);
-  an op-amp (MCP6002) as a line driver
+- 1 % resistors for the dual-PWM sum (1k, 267k; 255k and 270k to try), the filter (2 x 10k,
+  15 nF, 3.3 nF, 820 pF, C0G), and an op-amp (MCP6002) for the Sallen-Key and as a line driver
 
 ## Where it lives
 
@@ -155,6 +191,7 @@ tests with the C6 build.
   10 ms+ stall: reads have to run ahead of the playhead with some slack.
 - Does Petit FatFs fit next to everything else in 16 KB? (estimated ~12 KB total)
 - Cycles per instruction on the QingKe V2A (phase 1): keylock is 18 % at 1.5, 36 % at 3.
-- Is dual-PWM good enough to DJ with, or does this deck want a cheap I2S DAC? There's no I2S
-  peripheral; bit-banged I2S at 22 kHz would cost most of the CPU.
+- Dual PWM is good enough on paper (it beats mu-law). Are the 22.05 kHz images? Listen to
+  `ch32v003/build/out/pwm_*.wav` against `pwm_reference.wav`; if they're not, 2x interpolation
+  (RAM) or tracks packed band-limited to ~9 kHz (free).
 - Stereo: TIM1 has four channels, enough for two dual-PWM outputs; costs RAM and CPU.

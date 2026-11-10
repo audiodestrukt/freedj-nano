@@ -9,11 +9,18 @@ rings. The plan, the budgets and the phase 0 results: [../docs/DECK10C.md](../do
 | `lite/` | the engine (`lite.c`, `lite.h`) and the mu-law table and encoder (`ulaw.c`) |
 | `tests/test_lite.cpp` | host tests, some against the C6 engine (`components/nano`) |
 | `bench/` | RV32EC bench: a freestanding program, the runtime bits the toolchain lacks (`rt.c`), and the instruction counter (`count.py`) |
+| `sim/pwm_sim.py` | the PWM audio output modelled: TIM1's two pins, the resistor sum and the filter, solved exactly per pulse; measurements and listening WAVs |
 
 ```
 make test     # host tests; listening WAVs in build/out/
 make bench    # Docker (espressif/idf:release-v5.5 for its RISC-V GCC) + qemu-riscv32 on the host
+make pwm      # numpy, scipy (and ngspice for the self-test); IN=song.wav to hear a track
 ```
+
+`make pwm` checks the model (period tables against tick-by-tick stepping, the filter against
+ngspice), prints THD+N, images and ripple for each variant (8-bit, dual PWM, resistor choices,
+edge- and centre-aligned, RC-RC and Sallen-Key filters, interpolation), and writes
+`build/out/pwm_*.wav` with `pwm_reference.wav` (the same track through a perfect DAC) to A/B.
 
 `make bench` prints the engine's size, its RAM (`lite_deck`), and instructions per sample for
 varispeed and keylock, with the worst 64-sample block. CPU percentages assume 1.5 cycles per
