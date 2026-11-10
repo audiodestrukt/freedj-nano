@@ -5,7 +5,8 @@
 // buttons, pitch pot, the DJ2Go over the bridge), the track list and the screen.
 // On the chip: app_init() once, then app_step() forever.
 //
-//   turn             jog: nudge while playing, search while paused
+//   turn             jog: nudge while playing; while paused, scrub (play what's under it,
+//                    either way, at the speed it turns, up to 4x)
 //   SHIFT + turn     the track list; push loads (BACK or 8 s idle closes it)
 //   push             keylock on / off;  SHIFT + push: tempo range 6 / 10 / 16 / 50 %
 //   PLAY, CUE        CDJ: CUE while playing goes back to the cue point and pauses; while

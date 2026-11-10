@@ -179,18 +179,21 @@ static void wave(uint8_t band)
     px[WAVE_X] = (uint8_t)~px[WAVE_X];
 }
 
-// page 7: the whole track, 8 px
+// page 7: the whole track. Bars in the bottom 6 rows; the top 2 are a lane for the cue mark,
+// a small triangle pointing down at the cue point, so it shows whatever the bars do.
 static void overview(void)
 {
     if (g_app.frames < 128) return;
     const uint32_t per = g_app.frames >> 7;
     const uint32_t head = pos() / per, cue = g_app.cue / per;
     for (uint8_t x = 0; x < 128; x++) {
-        const uint8_t h = (uint8_t)((((g_app.ov[x >> 1] >> ((x & 1) << 2)) & 15) + 1) >> 1);   // 0..8
+        const uint8_t v = (g_app.ov[x >> 1] >> ((x & 1) << 2)) & 15;
+        const uint8_t h = (uint8_t)((v * 13 + 15) >> 5);              // 0..6
         uint8_t b = h ? (uint8_t)(0xFF << (8 - h)) : 0;
-        if (x < head) b &= (x & 1) ? 0xAA : 0x55;
-        if (x == head) b = (uint8_t)~b;
-        if (x == cue) b ^= 0x07;
+        if (x < head) b &= (x & 1) ? 0xAA : 0x55;                    // played: dimmed
+        if (x == cue) b |= 0x03;                                      // the triangle:  ###
+        else if (x + 1u == cue || x == cue + 1) b |= 0x01;            //                 #
+        if (x == head) b = (uint8_t)~b;                               // playhead: inverted
         s_buf[1 + x] = b;
     }
 }

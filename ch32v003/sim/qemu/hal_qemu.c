@@ -37,7 +37,9 @@ static const Ev kScript[] = {
     { 8500, E_PRESS, PIN_CUE, 0 }, { 8580, E_RELEASE, PIN_CUE, 0 },            // back to the cue
     { 8800, E_TURN, 0, 10 },                                                     // search
     { 9300, E_PRESS, PIN_CUE, 0 }, { 9800, E_RELEASE, PIN_CUE, 0 },            // preview
-    { 10500, E_END, 0, 0 },
+    { 10100, E_TURN, 0, 30 }, { 10400, E_TURN, 0, -30 },                      // scratch: scrub
+    { 10700, E_TURN, 0, 30 }, { 11000, E_TURN, 0, -30 },                      // ~2.7x each way
+    { 11500, E_END, 0, 0 },
 };
 
 static sd_emu   s_sd;

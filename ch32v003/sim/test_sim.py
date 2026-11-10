@@ -115,7 +115,9 @@ def main():
     check(c["state"] == 0 and c["pos"] == 0, f"CUE while playing: back to the cue, paused: {c}")
     check(rms(seg(a, 3.6, 4.0)) < 50, "silence after CUE")
     s = by["[mark searched]"]
-    check(s["pos"] == 25 * 4 * 88, f"search 25 detents paused: pos {s['pos']}, want {25 * 4 * 88}")
+    check(s["pos"] == 25 * 4 * 88 and s["state"] == 0, f"scrub 25 detents paused: lands at {s['pos']}, want {25 * 4 * 88}, paused")
+    check(rms(seg(a, 4.25, 4.33)) > 1000, "scrub: audio under the jog")
+    check(rms(seg(a, 4.50, 4.60)) < 50, "scrub: silent ~80 ms after the jog stops")
     pv = by["[mark preview]"]
     check(pv["state"] == 2 and pv["cue"] == 8800 and pv["pos"] > 8800, f"CUE held while paused: preview from the new cue: {pv}")
     check(rms(seg(a, 5.2, 6.4)) > 2000, "audio during the preview")
@@ -124,6 +126,18 @@ def main():
     pz = by["[mark paused]"]
     check(pz["state"] == 0 and pz["pos"] > 8800 + 0.9 * RATE, f"PLAY, PLAY: paused further on: {pz}")
     check(all(x["misses"] == 0 for x in rows), "no ring misses")
+
+    # ---- scrubbing backwards: a 440 Hz tone, the jog turned back at a steady rate
+    script = "300 key n\n500 turn 300\n3000 mark there\n"
+    script += "".join(f"{3100 + 30 * k} turn -1\n" for k in range(40))     # 4 counts per 30 ms: ~0.53x
+    script += "4500 mark back\n"
+    by, rows, a = session("scrub_back", script)
+    there, back = by["[mark there]"], by["[mark back]"]
+    check(back["pos"] == there["pos"] - 40 * 4 * 88 and back["state"] == 0,
+          f"scrub back 40 detents: {there['pos']} -> {back['pos']}, want {there['pos'] - 40 * 4 * 88}")
+    f = freq(seg(a, 3.3, 4.2))
+    check(abs(f / (440 * 4 * 88 / 0.030 / 22050) - 1) < 0.05, f"scrub back at ~0.53x: 440 Hz plays at {f:.0f} Hz")
+    check(all(x["misses"] == 0 for x in rows), "scrub back: no ring misses")
 
     # ---- keylock and tempo, measured on a 440 Hz tone (track 2) through everything
     by, rows, a = session("keylock", """

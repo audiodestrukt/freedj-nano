@@ -8,18 +8,23 @@
 #define NUDGE_PER_COUNT  328      // Q16: 0.5 % per encoder count while playing
 #define NUDGE_MAX        13107    // 20 %
 #define SEARCH_PER_COUNT 88       // frames (4 ms) per encoder count while paused
+#define SCRUB_MAX        0x40000  // Q16: scrubbing plays at up to 4x either way
+#define SCRUB_IDLE_MS    80       // the jog still this long and caught up: the scrub ends
 #define BROWSE_IDLE_MS   8000
 #define POT_DEAD         12       // ADC counts either side of the centre that read 0 %
 
 app_view  g_app;
 lite_deck g_deck;
 
-enum { P_NONE, P_CUE, P_LOAD };   // waiting for the fade out to finish
+enum { P_NONE, P_CUE, P_LOAD, P_SCRUB };   // waiting for the fade out to finish
 static trk_info s_trk;
 static uint8_t  s_pending;
 static int32_t  s_nudge, s_tempoQ16;
 static int16_t  s_fader;          // tempo control, -500..500 of the range
 static uint32_t s_browseAt, s_retryAt;
+static uint8_t  s_scrub;          // paused, and the jog is playing the audio under it
+static int32_t  s_scrubTo;        // where the jog has put the platter
+static uint32_t s_jogAt;
 static const uint8_t kRanges[] = { 6, 10, 16, 50 };
 
 // ---- deck
@@ -50,7 +55,16 @@ static void loadNow(uint16_t i)
     applySpeed();
 }
 
-static void stop(void) { g_app.state = ST_STOP; lite_play(&g_deck, 0); }
+// The scrub hands the deck back: keylock and tempo as they were.
+static void endScrub(void)
+{
+    if (!s_scrub) return;
+    s_scrub = 0;
+    lite_set_keylock(&g_deck, g_app.keylock);
+    applySpeed();
+}
+
+static void stop(void) { endScrub(); g_app.state = ST_STOP; lite_play(&g_deck, 0); }
 
 static void load(uint16_t i)
 {
@@ -64,6 +78,7 @@ static void load(uint16_t i)
 static void play(int pressed)
 {
     if (!pressed || g_app.track == APP_NONE) return;
+    if (s_scrub) { endScrub(); g_app.state = ST_PLAY; return; }      // play on from the scrub
     if (g_app.state == ST_CUE) g_app.state = ST_PLAY;                 // PLAY during a preview: keep going
     else if (g_app.state == ST_PLAY) stop();
     else { g_app.state = ST_PLAY; s_pending = P_NONE; lite_play(&g_deck, 1); }
@@ -75,6 +90,7 @@ static void cue(int pressed)
     if (pressed) {
         if (g_app.state == ST_PLAY) { stop(); s_pending = P_CUE; }     // back to the cue, paused
         else {
+            endScrub();
             const uint32_t p = (uint32_t)lite_pos(&g_deck);
             if (p != g_app.cue) g_app.cue = p;                         // set it here
             g_app.state = ST_CUE; s_pending = P_NONE;
@@ -88,12 +104,19 @@ static void cue(int pressed)
 static void jog(int16_t d)
 {
     if (g_app.track == APP_NONE || !d) return;
-    if (g_app.state == ST_STOP) {
-        if (g_deck.playing) return;                                    // still fading out
-        int32_t p = lite_pos(&g_deck) + d * SEARCH_PER_COUNT;
-        if (p < 0) p = 0;
-        if (p >= (int32_t)g_app.frames) p = (int32_t)g_app.frames - 1;
-        lite_seek(&g_deck, p);
+    if (g_app.state == ST_STOP) {                                      // scrub: play what's under the jog
+        if (g_deck.playing && !s_scrub) return;                        // still fading out
+        if (!s_scrub) {
+            s_scrub = 1;
+            s_scrubTo = lite_pos(&g_deck);
+            lite_set_keylock(&g_deck, 0);                              // varispeed, both ways
+            lite_set_speed(&g_deck, 0);
+            lite_play(&g_deck, 1);
+        }
+        s_scrubTo += d * SEARCH_PER_COUNT;
+        if (s_scrubTo < 0) s_scrubTo = 0;
+        if (s_scrubTo >= (int32_t)g_app.frames) s_scrubTo = (int32_t)g_app.frames - 1;
+        s_jogAt = hal_ms();
     } else {
         s_nudge += d * NUDGE_PER_COUNT;
         if (s_nudge > NUDGE_MAX) s_nudge = NUDGE_MAX;
@@ -271,6 +294,14 @@ void app_init(void)
 
 static void afterBlock(void)
 {
+    if (s_scrub) {                                // chase the jog: cover the gap in ~23 ms
+        const int32_t gap = s_scrubTo - lite_pos(&g_deck);
+        int32_t sp = gap > SCRUB_MAX >> 7 ? SCRUB_MAX : gap < -(SCRUB_MAX >> 7) ? -SCRUB_MAX : gap << 7;
+        lite_set_speed(&g_deck, sp);
+        if (gap > -16 && gap < 16 && hal_ms() - s_jogAt > SCRUB_IDLE_MS) {         // caught up, jog still:
+            stop(); s_pending = P_SCRUB;                                            // land exactly on it
+        }
+    }
     if (s_nudge) {                                // nudge springs back (~50 ms)
         s_nudge -= s_nudge >> 6;
         if (s_nudge > -64 && s_nudge < 64) s_nudge = 0;
@@ -278,6 +309,7 @@ static void afterBlock(void)
     }
     if (s_pending && !g_deck.playing) {           // faded out
         if (s_pending == P_CUE) lite_seek(&g_deck, (int32_t)g_app.cue);
+        else if (s_pending == P_SCRUB) lite_seek(&g_deck, s_scrubTo);
         else loadNow(g_app.sel);
         s_pending = P_NONE;
     }

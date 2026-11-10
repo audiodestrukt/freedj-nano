@@ -2,6 +2,23 @@
 
 Newest first. Each entry lists what changed, then the budget measured at that point.
 
+## 2026-11-10: CH32V003 scrub audio, both ways; cue mark on the overview
+
+- nano-lite plays backwards: a negative speed (varispeed only). When a backwards read falls
+  below the 35 ms ring, the ring is refilled with the playhead near its top, one forward read
+  from the card: one jump per ~700 frames. New tests: a 440 Hz tone backwards at 1x, 2.5x,
+  0.3x (pitch, travel, no misses, no clicks), a back-and-forth scratch. 106 checks.
+- The deck: turning the jog while paused plays what's under it, either way, at the speed it
+  turns (chasing the jog's position over ~23 ms, up to 4x), keylock off while scrubbing; 80 ms
+  after the jog stops it fades out and lands exactly where the jog put it. PLAY plays on from
+  the scrub; CUE sets the cue there. Sim checks: scrub forward lands exactly and is audible,
+  scrub back plays a 440 Hz tone at the expected pitch. 36 checks.
+- Overview (page 7): bars in the bottom 6 rows, a triangle at the cue in a 2-row lane above,
+  so it shows whatever the music looks like.
+- `make deckbench` with a ~2.7x back-and-forth scratch: worst scratch step 129 % of the ring
+  (refills are card jumps; with the waveform's). Overall worst still 135 % (waveform + keylock
+  search). RAM 2007 of 2048 B, flash ~13.8 of 16 KB.
+
 ## 2026-11-10: docs/DECK10C-PERF.md
 
 - The CH32V003 deck's performance written up for coming back to: the audio cushion (4.35 ms =

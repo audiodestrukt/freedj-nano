@@ -61,12 +61,13 @@ pipeline. So it depends on the code: two 2-byte (compressed) instructions per fe
 |---|---|---|
 | without the waveform | 22 % | **91 %** of the cushion (the track list) |
 | with the waveform | 37 % | **135 %: audio drops** (a waveform strip + a keylock search in one step) |
+| scratching (jog back and forth, ~2.7x, paused) | | **129 %**: each backwards ring refill is a card jump, on top of the waveform's |
 
 What a bad step is made of (with the waveform): ~110 k cycles waiting on SPI bytes, ~57 k in
 the SD driver, ~60-95 k in the engine (a keylock search), ~30 k drawing the strip. Most of it
 is **waiting on the card**, not computing.
 
-RAM: 1998 of 2048 bytes used, **50 spare**. Flash: ~13.3 of 16 KB.
+RAM: 2007 of 2048 bytes used, **41 spare**. Flash: ~13.8 of 16 KB.
 
 ## Done already
 
@@ -88,6 +89,9 @@ the few columns that scrolled in (~4) with **one** short read. To find the RAM: 
 bottom overview as 64 columns drawn 2 px wide (frees 32 B), which with the 50 spare is enough.
 
 Expect: the worst step back near the no-waveform 91 %. Effort: small (`ui.c`).
+
+Scrubbing backwards adds jumps of its own (a refill of the ring every ~700 frames going back);
+with no waveform reads beside them they'd be ~40 k cycles each, well inside the cushion.
 
 ### 2. Don't do two expensive things in one step
 
