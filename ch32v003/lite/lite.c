@@ -215,8 +215,12 @@ void lite_init(lite_deck* d, const lite_src* src)
 int32_t lite_pos(const lite_deck* d)
 {
     if (!d->stretch) return d->pos;
-    // the analysis position advances hop * speed per hop; i samples into it
-    return d->fresh ? d->cur + LITE_HOP : d->ana + (int32_t)(((uint32_t)d->i * (uint32_t)(d->speed >> 8)) >> 8);
+    // What's heard i samples into a hop fades from the last hop's end (prev + hop, ~ the last
+    // ana + hop) to this one's (ana + hop), so it's at ana + hop - (hop - i) * speed. i == 0
+    // is the end of the last hop (the next starts on the next sample). Continuous across hops
+    // and from a jump (fresh: ana = cur = frame - hop).
+    const uint32_t left = d->i ? LITE_HOP - d->i : 0;
+    return d->ana + LITE_HOP - (int32_t)((left * (uint32_t)(d->speed >> 8)) >> 8);
 }
 
 void lite_seek(lite_deck* d, int32_t frame)

@@ -136,6 +136,27 @@ static void testSpeedAndRings()
     CHECK(worstStep < ownStep * 2, "seeks and switches: max step %d vs the music's own %d (clicks?)", worstStep, ownStep);
 }
 
+// lite_pos() never goes backwards while playing forward (the display, cue points and the
+// end of the track all read it). It did at every hop boundary in keylock, by one hop.
+static void testPosMonotonic()
+{
+    auto m = music(10);
+    for (int kl = 0; kl < 2; kl++)
+        for (float sp : {0.5f, 0.92f, 1.0f, 1.035f, 1.5f}) {
+            Lite L(m);
+            lite_set_keylock(&L.d, kl); lite_set_speed(&L.d, (int32_t)lrintf(sp * 65536)); lite_play(&L.d, 1);
+            int32_t last = -1, back = 0;
+            int16_t o[32];
+            for (int b = 0; b < 2000; b++) {
+                lite_render(&L.d, o, 32);
+                const int32_t p = lite_pos(&L.d);
+                if (p < last) back++;
+                last = p;
+            }
+            CHECK(back == 0, "%s %.3f: position went backwards %d times", kl ? "keylock" : "varispeed", sp, back);
+        }
+}
+
 static void testQuality()
 {
     auto m = music(10);
@@ -175,6 +196,7 @@ int main()
     testUlaw();
     testPitch();
     testSpeedAndRings();
+    testPosMonotonic();
     testQuality();
     printf("%d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
