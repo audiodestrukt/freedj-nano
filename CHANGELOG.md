@@ -2,6 +2,14 @@
 
 Newest first. Each entry lists what changed, then the budget measured at that point.
 
+## 2026-11-10: docs/DECK10C-PERF.md
+
+- The CH32V003 deck's performance written up for coming back to: the audio cushion (4.35 ms =
+  209 k cycles) and why the worst step matters more than average CPU, why the SD card's jumps
+  are the slow part, cycles per instruction, the optimizations done (with numbers) and six to
+  try (waveform RAM cache, no two expensive things per step, a cheaper list, non-blocking SD
+  reads, SPI NOR flash, small stuff), and how to measure each.
+
 ## 2026-11-10: CH32V003 scrolling waveform; a cycle model; CPU and fps in the sim
 
 - Screen pages 4-6: a CDJ-style waveform, 1.5 s around the playhead (0.37 s behind), 23 px

@@ -172,6 +172,8 @@ for RV32EC (`-march=rv32ec_zicsr -mabi=ilp32e -Os`) in the ESP-IDF image's GCC, 
 
 ## The whole deck, simulated (2026-11-10)
 
+Where the time goes and what to try next, explained from scratch: [DECK10C-PERF.md](DECK10C-PERF.md).
+
 The firmware for phases 2-5 exists (`ch32v003/fw/`: transport, controls, DJ2Go map, OLED pages,
 SD driver, TRACKS.BIN, Petit FatFs) behind a small HAL, and runs two ways before any hardware:
 
