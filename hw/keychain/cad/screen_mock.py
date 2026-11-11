@@ -11,7 +11,10 @@ from PIL import Image, ImageDraw, ImageFont
 import params as M
 
 W, H = 96, 64
-FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+def _font(*paths):
+    """First of these that exists: DejaVu where the renders were made (Linux), Arial on macOS."""
+    return next((p for p in paths if os.path.exists(p)), paths[0])
+FONT = _font("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "/System/Library/Fonts/Supplemental/Arial Bold.ttf")
 
 TFT_SHOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "docs", "tft_320x240.png")
 

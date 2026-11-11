@@ -4,19 +4,18 @@
 SCREEN ?= tft20
 export KC_SCREEN = $(SCREEN)
 B = build/$(SCREEN)
-PY ?= python3
-BLENDER ?= /opt/blender-5.0.1-linux-x64/blender
+include ../../cad.mk
 RENDER = LC_ALL=C LANG=C $(BLENDER) -b -P render.py --
 
 all: parts glb
 
-parts:
+parts: $(CAD_DEPS)
 	$(PY) shell.py
 	$(PY) base.py
 	$(PY) jog.py
 	$(PY) controls.py
 
-glb:
+glb: $(CAD_DEPS)
 	$(PY) machine.py
 
 renders: glb

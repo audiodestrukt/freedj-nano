@@ -7,3 +7,5 @@ firmware/dependencies.lock
 tracks.bin
 __pycache__/
 *.pyc
+hw/.venv/
+.DS_Store

@@ -84,10 +84,11 @@ def check(parts):
         if (na, nb) in ALLOWED or (nb, na) in ALLOWED:
             continue
         A, B = a.bounding_box(), b.bounding_box()
-        if any(A.max.to_tuple()[i] <= B.min.to_tuple()[i] or B.max.to_tuple()[i] <= A.min.to_tuple()[i] for i in range(3)):
+        if any(a1 <= b0 or b1 <= a0 for a0, a1, b0, b1 in zip(A.min, A.max, B.min, B.max)):
             continue
         try:
-            v = (a & b).volume
+            r = a & b   # newer build123d: None if they do not touch, or a list of pieces
+            v = 0.0 if r is None else sum(x.volume for x in r) if isinstance(r, (list, tuple)) else r.volume
         except Exception:
             v = float("nan")
         if not v < 0.05:
@@ -115,7 +116,9 @@ def export(parts, path, with_screen=True, look=None):
     for name, solid, lk in parts:
         f = M.out(f"viz/{name}.stl")
         export_stl(solid, f, tolerance=0.01, angular_tolerance=0.05)
-        m = trimesh.load(f)
+        # STL has no normals and trimesh welds its vertices, so a viewer would smooth every edge
+        # (holes turn into dimples). Split the mesh at creases and write the normals out.
+        m = trimesh.graph.smooth_shade(trimesh.load(f), angle=np.radians(30))
         rgba, metal, rough, emis = look[lk]
         kw = dict(name=lk, baseColorFactor=rgba, metallicFactor=metal, roughnessFactor=rough,
                   alphaMode="BLEND" if rgba[3] < 1 else "OPAQUE", doubleSided=True)
@@ -126,7 +129,7 @@ def export(parts, path, with_screen=True, look=None):
         scene.add_geometry(screen_mesh(), geom_name="screen")
     scene.apply_transform(trimesh.transformations.scale_matrix(0.001))
     scene.apply_transform(trimesh.transformations.rotation_matrix(-np.pi / 2, [1, 0, 0]))
-    scene.export(path)
+    scene.export(path, include_normals=True)
     print("wrote", path)
 
 def build(do_check=True):

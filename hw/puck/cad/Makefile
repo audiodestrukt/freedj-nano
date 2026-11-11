@@ -1,16 +1,15 @@
 # Puck deck CAD. `make` builds the printable STLs and the assembly GLBs (with the fit check)
 # into build/; `make renders` re-renders the hero, top, inside and section views there.
-PY ?= python3
-BLENDER ?= /opt/blender-5.0.1-linux-x64/blender
+include ../../cad.mk
 RENDER = LC_ALL=C LANG=C $(BLENDER) -b -P render.py --
 
 all: parts glb
 
-parts:
+parts: $(CAD_DEPS)
 	$(PY) shell.py
 	$(PY) jog.py
 
-glb:
+glb: $(CAD_DEPS)
 	$(PY) machine.py
 
 renders: glb

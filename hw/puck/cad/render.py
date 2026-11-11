@@ -77,9 +77,8 @@ def main():
     sc.render.engine = "CYCLES"; sc.cycles.samples = int(o["samples"]); sc.cycles.use_denoising = True
     prefs = bpy.context.preferences.addons["cycles"].preferences
     chosen = None
-    for backend in ("OPTIX", "CUDA"):
-        prefs.compute_device_type = backend
-        try: prefs.refresh_devices()
+    for backend in ("OPTIX", "CUDA", "METAL"):   # a backend this build lacks raises on assignment
+        try: prefs.compute_device_type = backend; prefs.refresh_devices()
         except Exception: continue
         if any(dv.type == backend for dv in prefs.devices):
             for dv in prefs.devices: dv.use = (dv.type == backend)

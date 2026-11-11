@@ -5,13 +5,16 @@ No round layout exists in the firmware yet. Drawn at 1 px = 1 LCD pixel (scaled 
 nearest-neighbour for the render): track progress round the edge, time and pitch in the middle,
 a scrolling waveform across it, and CUE / PLAY as touch buttons along the bottom.
 """
-import math, random
+import math, os, random
 from PIL import Image, ImageDraw, ImageFont
 import params as M
 
 N = 240
-BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-REG = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+def _font(*paths):
+    """First of these that exists: DejaVu where the renders were made (Linux), Arial on macOS."""
+    return next((p for p in paths if os.path.exists(p)), paths[0])
+BOLD = _font("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "/System/Library/Fonts/Supplemental/Arial Bold.ttf")
+REG = _font("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/System/Library/Fonts/Supplemental/Arial.ttf")
 F = lambda s, b=True: ImageFont.truetype(BOLD if b else REG, s)
 
 def main():

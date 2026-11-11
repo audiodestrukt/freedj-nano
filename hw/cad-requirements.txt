@@ -1,0 +1,6 @@
+# Python packages the hw/*/cad scripts import. Installed into hw/.venv by cad.mk.
+# (render.py's bpy / mathutils come with Blender, not from here.)
+build123d
+trimesh
+numpy
+pillow
