@@ -2,6 +2,21 @@
 
 Newest first. Each entry lists what changed, then the budget measured at that point.
 
+## 2026-11-10: hw/keychain, a pocket deck enclosure for the XIAO ESP32-S3
+
+- build123d CAD in the freedj-esp style (one params file, mate-placed parts, a numbered
+  render log): 60 x 63.6 x 16.9 mm, CDJ layout. 0.95" SSD1331 colour OLED over a 32 mm jog
+  (printed platter + 6 mm shaft, two MR106ZZ, magnet 1.0 mm over the AS5600 breakout),
+  8 mm CUE over PLAY in the bottom-left corner with the platter's front edge in line with
+  PLAY's, 35 mm pitch fader down the right side from the front edge. Inside: a main PCB
+  outline (XIAO S3, PCM5102A, 3.5 mm jack, 6 x 6 tact switches, fader soldered through),
+  402030 LiPo under it, USB-C out the back for a stick.
+- `make` builds the STLs (shell, base, platter, collar, caps, knob, fit gauge; all single
+  watertight bodies) and checks every pair of parts for overlap (28 parts, no clashes).
+- To measure before printing (marked MEASURE in `params.py`): the OLED board and glass,
+  the 35 mm fader's frame and lever, the jack, the LiPo. Open: the main PCB itself, and
+  5 V for a stick on battery (needs a boost).
+
 ## 2026-11-10: hw/xiao-mini, a carrier board for the XIAO ESP32-C6 deck
 
 - A 72 x 46 mm 2-layer board (tscircuit source, routed headless with the pcb-layout skill's
