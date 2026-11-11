@@ -1,9 +1,11 @@
 # SPDX-FileCopyrightText: 2026 Dan Newcome
 # SPDX-License-Identifier: CERN-OHL-S-2.0
-"""screen_mock.py: a 96 x 64 picture of a play screen for the colour OLED, render only
-(drawn at 1 px = 1 OLED pixel, then scaled up with nearest-neighbour so it looks like one).
-python3 screen_mock.py -> build/screen.png
+"""screen_mock.py: the picture on the screen in the renders -> build/<screen>/screen.png
+  tft20    the firmware's own 320 x 240 play screen (docs/tft_320x240.png, from the C6 build)
+  oled095  a mock-up: no 96 x 64 layout exists yet. Drawn at 1 px = 1 OLED pixel, then scaled
+           up with nearest-neighbour so it looks like one.
 """
+import os
 import math, random
 from PIL import Image, ImageDraw, ImageFont
 import params as M
@@ -11,7 +13,13 @@ import params as M
 W, H = 96, 64
 FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
+TFT_SHOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "docs", "tft_320x240.png")
+
 def main():
+    if M.SCREEN == "tft20":
+        Image.open(TFT_SHOT).convert("RGB").save(M.out("screen.png"))
+        print("wrote", M.out("screen.png"), "(firmware screenshot)")
+        return
     random.seed(3)
     im = Image.new("RGB", (W, H), (0, 0, 0)); d = ImageDraw.Draw(im)
     d.text((1, 0), "NIGHT BUS", font=ImageFont.truetype(FONT, 8), fill=(220, 224, 230))

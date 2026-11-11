@@ -30,16 +30,17 @@ def usb_c():
     o = Pos(cx, mouth - dpt / 2, M.MAIN_TOP + M.XIAO[2]) * Box(w, dpt, h, align=C)
     return o - Pos(cx, mouth - dpt / 2 + 0.6, M.MAIN_TOP + M.XIAO[2] + 0.4) * Box(w - 0.8, dpt, h - 0.8, align=C)
 
-def oled():
-    """Board, glass and the active area (a thin slab the screen texture goes on)."""
-    bx, by, bt = M.OLED_PCB
-    pcb = Pos(*M.OLED_C, M.OLED_Z) * Box(bx, by, bt, align=C)
-    hx, hy = M.OLED_HOLES
-    pcb -= [Pos(M.OLED_C[0] + sx * hx / 2, M.OLED_C[1] + sy * hy / 2, M.OLED_Z - 1) * Cylinder(1.1, 4, align=C)
+def screen():
+    """Board, glass and the wire stubs at its header."""
+    bx, by, bt = M.SCR_PCB
+    pcb = Pos(*M.SCR_C, M.SCR_Z) * Box(bx, by, bt, align=C)
+    hx, hy = M.SCR_HOLES
+    pcb -= [Pos(M.SCR_C[0] + sx * hx / 2, M.SCR_C[1] + sy * hy / 2, M.SCR_Z - 1) * Cylinder(1.1, 4, align=C)
             for sx in (-1, 1) for sy in (-1, 1)]
-    gx, gy, gt = M.OLED_GLASS
-    glass = Pos(*M.GLASS_C, M.OLED_Z + bt) * Box(gx, gy, gt, align=C)
-    pins = Pos(M.OLED_C[0], M.OLED_C[1] + (-1 if M.OLED_HEADER_FRONT else 1) * (by / 2 - 1.6), M.OLED_Z - 1.0) * Box(7 * 2.54, 1.2, 1.0, align=C)
+    gx, gy, gt = M.SCR_GLASS
+    glass = Pos(*M.GLASS_C, M.SCR_Z + bt) * Box(gx, gy, gt, align=C)
+    px, py, pw, pl = M.SCR_PINS
+    pins = Pos(M.SCR_C[0] + px, M.SCR_C[1] + py, M.SCR_Z - 1.0) * Box(pw, pl, 1.0, align=C)
     return pcb, glass, pins
 
 def battery():
@@ -48,11 +49,18 @@ def battery():
 
 def jack():
     l, w, h = M.JACK
-    x0 = M.W - M.WALL - 0.3 - l
-    body = Pos(x0 + l / 2, M.JACK_C_Y, M.MAIN_TOP) * Box(l, w, h, align=C)
     bd, bl = M.JACK_BARREL
-    barrel = Pos(x0 + l, M.JACK_C_Y, M.MAIN_TOP + h / 2) * Rot(0, 90, 0) * Cylinder(bd / 2, bl, align=C)
-    hole = Pos(x0 + l - 8, M.JACK_C_Y, M.MAIN_TOP + h / 2) * Rot(0, 90, 0) * Cylinder(1.8, 12, align=C)
+    zc = M.MAIN_TOP + h / 2
+    if M.JACK_SIDE == "right":
+        x0 = M.W - M.WALL - 0.3 - l
+        body = Pos(x0 + l / 2, M.JACK_C_Y, M.MAIN_TOP) * Box(l, w, h, align=C)
+        barrel = Pos(x0 + l, M.JACK_C_Y, zc) * Rot(0, 90, 0) * Cylinder(bd / 2, bl, align=C)
+        hole = Pos(x0 + l - 8, M.JACK_C_Y, zc) * Rot(0, 90, 0) * Cylinder(1.8, 12, align=C)
+    else:
+        x0 = M.WALL + 0.3
+        body = Pos(x0 + l / 2, M.JACK_C_Y, M.MAIN_TOP) * Box(l, w, h, align=C)
+        barrel = Pos(x0 - bl, M.JACK_C_Y, zc) * Rot(0, 90, 0) * Cylinder(bd / 2, bl, align=C)
+        hole = Pos(x0 - bl - 1, M.JACK_C_Y, zc) * Rot(0, 90, 0) * Cylinder(1.8, 10, align=C)
     return body.fuse(barrel) - hole
 
 def dac():

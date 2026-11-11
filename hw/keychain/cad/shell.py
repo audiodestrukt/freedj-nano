@@ -4,7 +4,7 @@
 (the keyring tab is flush with the top, the bosses hang off the top plate).
 
 Carries the jog well and the MR106 bearing boss, the CUE / PLAY holes, the fader slot with
-countersunk M2s into the pot frame, the OLED window (chamfered) and its four bosses, the
+countersunk M2s into the pot frame, the screen window (chamfered) and its four bosses, the
 USB-C and headphone-jack openings, four short corner bosses for the base, and the keyring tab.
 python3 shell.py -> build/shell.stl
 """
@@ -30,9 +30,9 @@ def _web(x, y, side, h):
             "f": Pos(x, y / 2, M.BASE_T) * Box(d, y, h, align=C),
             "b": Pos(x, (y + M.D) / 2, M.BASE_T) * Box(d, M.D - y, h, align=C)}[side]
 
-def oled_holes():
-    hx, hy = M.OLED_HOLES
-    return [(M.OLED_C[0] + sx * hx / 2, M.OLED_C[1] + sy * hy / 2) for sx in (-1, 1) for sy in (-1, 1)]
+def screen_holes():
+    hx, hy = M.SCR_HOLES
+    return [(M.SCR_C[0] + sx * hx / 2, M.SCR_C[1] + sy * hy / 2) for sx in (-1, 1) for sy in (-1, 1)]
 
 def _plan(inset, z0, h):
     r = M.CORNER_R if inset == 0 else M.INNER_R + M.WALL - inset   # walls thicken into the corners
@@ -59,9 +59,13 @@ def part():
     for x, y, walls in posts(webs=True):   # short bosses, webbed into the walls
         adds.append(Pos(x, y, M.BASE_T) * Cylinder(M.POST_D / 2, ph, align=C))
         adds += [_web(x, y, s, ph) for s in walls]
-    oled_pcb_top = M.OLED_Z + M.OLED_PCB[2]
-    for x, y in oled_holes():   # OLED bosses: down from the top to the module's board
-        adds.append(Pos(x, y, oled_pcb_top) * Cylinder(M.OLED_BOSS_D / 2, M.TOP_UNDER - oled_pcb_top + 0.5, align=C))
+    for s in (-1, 1):   # fader pads: the frame hangs from these
+        if M.POT_PAD > 0:
+            adds.append(Pos(M.POT_X, M.POT_C + s * M.POT_HOLES / 2, M.POT_TOP) *
+                        Box(M.POT_FRAME[0] - 1.0, M.POT_PAD_L, M.POT_PAD + 0.5, align=C))
+    scr_pcb_top = M.SCR_Z + M.SCR_PCB[2]
+    for x, y in screen_holes():   # screen bosses: down from the top to the module's board
+        adds.append(Pos(x, y, scr_pcb_top) * Cylinder(M.SCR_BOSS_D / 2, M.TOP_UNDER - scr_pcb_top + 0.5, align=C))
     shell = shell.fuse(*[a & inside for a in adds], *([tab() - _plan(M.WALL, -1, M.TOP_UNDER + 1)] if M.KEYRING else []))
 
     cuts = []
@@ -76,32 +80,40 @@ def part():
     cuts.append(Pos(M.POT_X, M.POT_C, M.TOP_UNDER - 1) * Box(M.SLOT_W, y1 - y0, M.TOP_T + 2, align=C))
     for s in (-1, 1):   # M2 countersunk into the pot frame's tapped holes
         y = M.POT_C + s * M.POT_HOLES / 2
-        cuts.append(Pos(M.POT_X, y, M.TOP_UNDER - 1) * Cylinder(1.15, M.TOP_T + 2, align=C))
+        cuts.append(Pos(M.POT_X, y, M.POT_TOP - 1) * Cylinder(1.15, M.TOP_T + M.POT_PAD + 2, align=C))
         cuts.append(Pos(M.POT_X, y, M.H - 0.95) * Cone(1.15, 2.05, 0.96, align=C))
     for k in range(-4, 5):   # tempo ticks left of the knob, engraved 0.4 deep
         ln = 2.0 if k in (-4, 0, 4) else 1.2
         x1 = M.POT_X - M.KNOB[0] / 2 - 0.6
         cuts.append(Pos(x1 - ln / 2, M.POT_C + k * M.POT_TRAVEL / 8, M.H - 0.4) * Box(ln, 0.5, 1, align=C))
-    # OLED window: straight lip, then 45 degrees out to the top
+    # screen window: straight lip, then 45 degrees out to the top
     ww, wh = M.WIN
     ch = M.TOP_T - M.WINDOW_LIP
     cuts.append(Pos(*M.WIN_C, M.TOP_UNDER - 1) * Box(ww, wh, M.TOP_T + 2, align=C))
     cuts.append(Pos(*M.WIN_C, M.H - ch) * extrude(Rectangle(ww, wh), amount=ch + 0.01, taper=-45))
     cuts.append(Pos(*M.WIN_C, M.H) * Box(ww + 2 * ch, wh + 2 * ch, 2, align=C))
     # clearance over the glass (a pocket in the bosses' way would be wrong: the glass is narrower)
-    for x, y in oled_holes():
-        cuts.append(Pos(x, y, M.OLED_Z + M.OLED_PCB[2] - 0.01) * Cylinder(M.OLED_PILOT[0] / 2, M.OLED_PILOT[1] + 0.01, align=C))
+    for x, y in screen_holes():
+        cuts.append(Pos(x, y, M.SCR_Z + M.SCR_PCB[2] - 0.01) * Cylinder(M.SCR_PILOT[0] / 2, M.SCR_PILOT[1] + 0.01, align=C))
     # USB-C through the back wall, with a relief round it for a stick's overmould
     xz = M.MAIN_TOP + M.XIAO[2] + M.USBC[1] / 2
     cuts.append(Pos(M.XIAO_C[0], M.D - M.WALL / 2, xz) * Box(M.USBC[0] + 0.8, M.WALL + 2, M.USBC[1] + 0.8))
     cuts.append(Pos(M.XIAO_C[0], M.D, xz) * Box(12.6, 1.4, 7.0))
-    # headphone jack through the right wall
-    cuts.append(Pos(M.W - M.WALL - 1, M.JACK_C_Y, M.MAIN_TOP + M.JACK[2] / 2) * Rot(0, 90, 0) * Cylinder(M.JACK_HOLE / 2, M.WALL + 4, align=C))
+    # headphone jack through the side wall
+    jx0 = M.W - M.WALL - 1 if M.JACK_SIDE == "right" else -2
+    cuts.append(Pos(jx0, M.JACK_C_Y, M.MAIN_TOP + M.JACK[2] / 2) * Rot(0, 90, 0) * Cylinder(M.JACK_HOLE / 2, M.WALL + 4, align=C))
     for x, y in posts():
         cuts.append(Pos(x, y, M.BASE_T - 0.01) * Cylinder(M.POST_PILOT[0] / 2, M.POST_PILOT[1] + 0.01, align=C))   # up from the base
-    try:
-        cuts.append(Pos(M.WIN_C[0], (M.WIN_C[1] + wh / 2 + ch + M.D - M.WALL) / 2, M.H - 0.4) *
-                    extrude(Text("FREEDJ", 2.6, font_style=FontStyle.BOLD, align=(Align.CENTER, Align.CENTER)), 1))
+    try:   # brand: behind the window if there's room (OLED), else up the strip left of it (2")
+        txt = Text("FREEDJ", 2.6, font_style=FontStyle.BOLD, align=(Align.CENTER, Align.CENTER))
+        back = M.D - M.WALL - (M.WIN_C[1] + wh / 2 + ch)
+        if back >= 3.4:
+            at = Pos(M.WIN_C[0], (M.WIN_C[1] + wh / 2 + ch + M.D - M.WALL) / 2, M.H - 0.4)
+        else:
+            left = M.WIN_C[0] - ww / 2 - ch
+            assert left - M.WALL >= 4.0, "no room for the brand"
+            at = Pos((M.WALL + left) / 2, M.WIN_C[1], M.H - 0.4) * Rot(0, 0, 90)
+        cuts.append(at * extrude(txt, 1))
     except Exception as e:
         print("  (brand skipped:", e, ")")
     return shell.cut(*cuts)

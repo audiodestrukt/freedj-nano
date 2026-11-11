@@ -2,6 +2,29 @@
 
 Newest first. Each entry lists what changed, then the budget measured at that point.
 
+## 2026-11-11: hw/puck, a round deck with the whole top as the jog
+
+- build123d CAD, 65 mm across x 33.1 mm tall. Waveshare 1.28" round touch LCD (GC9A01 +
+  CST816S, numbers from Waveshare's drawing and STEP) in the middle; the ring round the glass
+  and the knurled side turn as the jog on one 61808 (40 x 52 x 7). Touch for CUE / PLAY /
+  pitch. The screen screws to a printed post on the bearing's inner race; the jog is a hub
+  (holds the outer race) plus a face glued on last.
+- Encoder: a 60-tooth comb under the hub runs through two ITR9608 slotted opto-interrupters
+  (quadrature, 240 counts per turn) standing up from the main PCB through windows in the
+  deck plate, hidden under the jog. Bay: round main PCB, XIAO ESP32-S3 (USB-C out the back),
+  LiPo, PCM5102A, 3.5 mm jack on the left. All 11 XIAO pins used.
+- `make` builds the STLs (shell, base, post, washer, hub, face; all single watertight bodies)
+  and fit-checks 20 parts, no clashes. To measure: the sensors (a 6 mm tall clone makes it
+  4 mm shorter), the 61808 race lands, XIAO, LiPo, jack. Open: main PCB, 5 V boost, firmware
+  round layout and quadrature driver, a square-screen version.
+
+## 2026-11-11: hw/keychain, 2" TFT option, jog and screen on the centreline
+
+- `SCREEN=tft20` (default, 2" ST7789 320 x 240) or `oled095`; builds go to `build/<screen>/`.
+- The jog and the screen's active area now sit on the centreline; the width comes from
+  whichever of the CUE column, the fader or the screen board needs most. tft20 is
+  65.8 x 76 x 18.2 mm, oled095 60.4 x 63.6 x 16.9. Fit check clean for both (28 parts).
+
 ## 2026-11-10: hw/keychain, a pocket deck enclosure for the XIAO ESP32-S3
 
 - build123d CAD in the freedj-esp style (one params file, mate-placed parts, a numbered

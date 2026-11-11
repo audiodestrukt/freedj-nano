@@ -67,8 +67,8 @@ def scene_parts():
     add("main_pcb", stock.main_pcb(), "pcb")
     xp, xs = stock.xiao()
     add("xiao_pcb", xp, "pcb_blue"); add("xiao_shield", xs, "steel"); add("usb_c", stock.usb_c(), "steel")
-    op, og, opins = stock.oled()
-    add("oled_pcb", op, "pcb_blue"); add("oled_glass", og, "glass"); add("oled_pins", opins, "steel")
+    sp, sg, spins = stock.screen()
+    add("screen_pcb", sp, "pcb_blue"); add("screen_glass", sg, "glass"); add("screen_pins", spins, "steel")
     add("battery", stock.battery(), "batt")
     add("jack", stock.jack(), "jack")
     add("dac", stock.dac(), "chip")
@@ -98,9 +98,9 @@ def check(parts):
     return not bad
 
 def screen_mesh():
-    aw, ah = M.OLED_ACTIVE
+    aw, ah = M.SCR_ACTIVE
     z = M.GLASS_TOP + 0.02
-    cx, cy = M.GLASS_C[0], M.GLASS_C[1] + M.OLED_AA_DY
+    cx, cy = M.WIN_C
     pts = [(cx - aw / 2, cy - ah / 2, z), (cx + aw / 2, cy - ah / 2, z), (cx + aw / 2, cy + ah / 2, z), (cx - aw / 2, cy + ah / 2, z)]
     img = Image.open(M.out("screen.png")).convert("RGB")
     mat = PBRMaterial(name="screen", baseColorTexture=img, emissiveTexture=img, emissiveFactor=[1, 1, 1],
@@ -143,7 +143,7 @@ def build(do_check=True):
         c = s & keep
         if c.volume > 0.01: cut.append((name, c, lk))
     export(cut, M.out("deck_cut.glb"), with_screen=False, look=CUT_LOOK)
-    hide = ("shell", "cue_cap", "play_cap", "cue_icon", "play_icon", "knob", "knob_line", "platter", "oled_pcb", "oled_glass", "oled_pins")
+    hide = ("shell", "cue_cap", "play_cap", "cue_icon", "play_icon", "knob", "knob_line", "platter", "screen_pcb", "screen_glass", "screen_pins")
     export([p for p in parts if p[0] not in hide], M.out("deck_inside.glb"), with_screen=False)
     return ok
 
