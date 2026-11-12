@@ -23,8 +23,12 @@ def post():
     p = p.fuse(tube(M.STEP[0], M.POST_BORE, step_z, M.BRG_Z))
     p = p.fuse(tube(M.BRG[0], M.POST_BORE, M.BRG_Z, M.POST_TOP))
     # lead-in chamfer for the bearing
-    p -= Pos(0, 0, M.POST_TOP - 0.5) * Cone(M.BRG[0] / 2 - 0.5, M.BRG[0] / 2 + 0.5, 1.0, align=C) \
-        - Pos(0, 0, M.POST_TOP - 0.6) * Cylinder(M.BRG[0] / 2 - 0.5, 1.2, align=C)
+    # 0.5 x 45 deg off the top outer edge: cut away everything outside a cone that runs from
+    # the post's radius 0.5 below the top in to 0.5 smaller at the top
+    r = M.BRG[0] / 2
+    p -= Pos(0, 0, M.POST_TOP - 0.6) * Cylinder(r + 2, 1.2, align=C) \
+        - Pos(0, 0, M.POST_TOP - 0.6) * Cone(r + 0.1, r - 0.6, 0.7, align=C) \
+        - Pos(0, 0, M.POST_TOP - 0.6) * Cylinder(r - 0.6, 1.2, align=C)
     cuts = []
     for a in M.SENS_ANG:   # flats for the sensors' inner arms
         cuts.append(Rot(0, 0, a) * Pos(M.POST_FLAT, 0, M.PLATE_TOP - 1) *
