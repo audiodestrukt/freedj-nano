@@ -65,12 +65,16 @@ if SCREEN == "tft20":
     SCR_PINS = (-29.0 + 2.4, 0.0, 1.0, 8 * 2.54)   # header holes along the left end: x, y, w, l
     SCR_BOSS_D = 4.4                     # must clear the glass (2.5 mm from hole to glass edge)
 else:
-    SCR_PCB = (30.5, 27.5, 1.2)          # generic 7-pin SSD1331 board. MEASURE
-    SCR_HOLES = (27.0, 23.0)             # M2 x 4, from a listing. MEASURE
-    SCR_GLASS = (25.7, 17.6, 1.5)        # panel + tape. MEASURE
-    SCR_GLASS_OFF = (0.0, 0.0)           # MEASURE
+    # The board stands portrait: holes measured 23.5 across x 26.75 front-to-back (2026-11-13);
+    # the listing had them the other way round
+    SCR_PCB = (28.5, 32.5, 1.2)          # generic 7-pin SSD1331 board, scaled from a photo by the holes. MEASURE
+    SCR_HOLES = (23.5, 26.75)            # M2 x 4, measured
+    SCR_GLASS = (25.0, 17.0, 1.5)        # visible panel measured 25 x 17; thickness. MEASURE
+    # glass sits between the hole rows, 0.3 toward the pins (photo: 3.8 mm to the pin-side
+    # holes, 4.4 to the far ones, where the panel's ribbon folds under). Pins face the jog (-y).
+    SCR_GLASS_OFF = (0.0, -0.3)          # MEASURE
     SCR_ACTIVE = (20.14, 13.42)          # 96 x 64 at 0.21 mm (SSD1331 panel drawing)
-    SCR_AA_OFF = (0.0, 0.0)              # MEASURE
+    SCR_AA_OFF = (0.0, -0.6)             # pixels sit away from the ribbon end of the glass. MEASURE
     # 7-pin header on the edge toward the jog (the back edge is over the USB-C)
     SCR_PINS = (0.0, -(SCR_PCB[1] / 2 - 1.6), 7 * 2.54, 1.2)
     SCR_BOSS_D = 4.2

@@ -14,7 +14,7 @@ Two screens, picked with `make SCREEN=...` (or `KC_SCREEN=...` for the scripts):
 | Active area | 40.8 x 30.6 mm | 20.1 x 13.4 mm |
 | Fader | 20 mm (35 mm frame): a longer one would run under the screen's board | 35 mm (50 mm frame) |
 | Jack | left wall, between CUE and the screen | right wall, behind the fader |
-| Case | **65.8 x 76 x 18.2 mm** | **60.4 x 63.6 x 16.9 mm** |
+| Case | **65.8 x 76 x 18.2 mm** | **60.4 x 66.7 x 16.9 mm** |
 
 The platter stands 4.3 mm proud on both. (A keyring tab is in the CAD but switched off:
 `KEYRING = True` in `params.py` adds it to the back-left corner.)
@@ -64,8 +64,10 @@ the parts here. The ones that move things:
 - **2" screen**: from Waveshare's 2inch LCD Module drawing (board 58 x 35, M2 holes
   53 x 30, glass 47.83 x 34.60, active area 1.7 mm away from the header end, 4.0 mm from
   glass face to board back). Generic 2" ST7789 boards vary, so check yours.
-- **OLED board**: size (30.5 x 27.5 assumed), hole spacing (27 x 23), where the glass and
-  its active area sit on the board (centred assumed), glass + tape thickness (1.5).
+- **OLED board**: the holes (23.5 across x 26.75 front to back, M2) and the visible panel
+  (25 x 17) are measured. The board's outline (28.5 x 32.5, portrait) and the glass
+  sitting 0.3 mm toward the pins come from scaling a photo by the holes: measure the board,
+  and the glass edge to each hole row. Also glass + tape thickness (1.5).
 - **Fader**: frame (travel + 15 long, 9 wide, 6.5 deep, by the Bourns PTA rule), screw holes
   (M2, frame - 4 apart; some have tabs instead), lever (1.2 x 4, 10 mm above the frame).
   The knob is 7.5 mm tall on the 2" case, 8.6 on the OLED one.
