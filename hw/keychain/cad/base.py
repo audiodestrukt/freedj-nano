@@ -3,7 +3,7 @@
 """base.py: base plate. Drops inside the shell walls, four M2 x 6 countersunk screws into the
 corner bosses. Carries the AS5600 breakout on four short bosses (M2 thread-formers from
 above) and a shallow pocket that locates the LiPo.
-python3 base.py -> build/base.stl
+python3 base.py -> build/<screen>/base.stl
 """
 from build123d import *
 import params as M

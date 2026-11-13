@@ -6,7 +6,7 @@
 Carries the jog well and the MR106 bearing boss, the CUE / PLAY holes, the fader slot with
 countersunk M2s into the pot frame, the screen window (chamfered) and its four bosses, the
 USB-C and headphone-jack openings, four short corner bosses for the base, and the keyring tab.
-python3 shell.py -> build/shell.stl
+python3 shell.py -> build/<screen>/shell.stl
 """
 from build123d import *
 import params as M

@@ -143,9 +143,14 @@ _jog_x_min = CUE_C[0] + math.sqrt(_r ** 2 - (JOG_Y - CUE_C[1]) ** 2)
 # ---------------------------------------------------------------- pitch fader
 # Generic slide pot, T-shaft lever. Frame = travel + 15 and holes = frame - 4, as on the
 # Bourns PTA ones (PTA4543 60 x 9, holes 56; PTA6043 75 x 9, holes 71).
-POT_TRAVEL = 20.0 if SCREEN == "tft20" else 35.0
-POT_FRAME = (9.0, POT_TRAVEL + 15.0, 6.5)   # across, along, frame top -> body bottom. MEASURE
-POT_HOLES = POT_FRAME[1] - 4.0       # M2 in the frame top. MEASURE (some have tabs instead)
+if SCREEN == "tft20":   # 20 mm fader: a longer one runs under the 2" screen's board
+    POT_TRAVEL = 20.0
+    POT_FRAME = (9.0, POT_TRAVEL + 15.0, 6.5)   # across, along, frame top -> body bottom. MEASURE
+    POT_HOLES = POT_FRAME[1] - 4.0   # M2 in the frame top. MEASURE (some have tabs instead)
+else:   # the fader on hand: M2 holes measured 40.5 apart (2026-11-13), the common "45 mm" slide pot
+    POT_HOLES = 40.5                 # M2 in the frame top, measured
+    POT_TRAVEL = 30.0                # MEASURE (45 mm frame, 30 mm travel assumed from the holes)
+    POT_FRAME = (9.0, POT_HOLES + 4.5, 6.5)   # across, along (MEASURE), frame top -> body bottom. MEASURE
 POT_PINS_L = 3.5                     # PC pins below the body, soldered through the main PCB
 LEVER = (1.2, 4.0, 10.0)             # across, along, above the frame top. MEASURE
 KNOB = (8.0, 6.5)                    # across, along
@@ -205,7 +210,6 @@ if SCR_C[0] + SCR_PCB[0] / 2 > POT_X - POT_FRAME[0] / 2:   # board reaches over 
 # XIAO under the screen, USB-C at the back
 XIAO_C = (SCR_C[0], D - WALL - 0.2 - XIAO[1] / 2)
 BATT_C = (SCR_C[0], XIAO_C[1] - 1.0)
-DAC_C = (XIAO_C[0] + XIAO[0] / 2 + 4.5, XIAO_C[1] - 6.0)   # right of the XIAO, in front of the jack; PCM5102A (TSSOP-20)
 # 3.5 mm jack (PJ-320D style SMD) on the main PCB. OLED: out the right wall behind the
 # fader. 2": out the left wall between CUE and the screen (it is too tall to go under the
 # screen's board, and the fader's line is taken).
@@ -220,6 +224,10 @@ if JACK_SIDE == "left":
 else:
     JACK_C_Y = POT_C + POT_FRAME[1] / 2 + 1.2 + JACK[1] / 2
 JACK_HOLE = 6.0
+# PCM5102A (TSSOP-20, 6.5 x 4.4) right of the XIAO, in front of the jack with 0.5 mm to spare
+DAC_C = (XIAO_C[0] + XIAO[0] / 2 + 4.5, XIAO_C[1] - 6.0)
+if JACK_SIDE == "right":
+    DAC_C = (DAC_C[0], min(DAC_C[1], JACK_C_Y - JACK[1] / 2 - 0.5 - 4.4 / 2))
 assert JACK_C_Y + JACK[1] / 2 < D - WALL, "jack hits the back wall"
 
 # Base fixing: four short corner bosses fused into the walls, M2 thread-formers from below

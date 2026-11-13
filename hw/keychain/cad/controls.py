@@ -7,7 +7,7 @@ the shell's "cue" / "play" / "knob" mates. The pot's frame sits on the "pot" mat
 Caps go in from below: the flange under the top stops them coming out, the nub rests on the
 6 x 6 tact switch. For prototyping, bought 6 x 6 switches with tall (9.5 mm) round actuators
 poke through the same 8.4 mm holes without caps (see README).
-python3 controls.py -> build/cue_cap.stl, play_cap.stl, knob.stl
+python3 controls.py -> build/<screen>/cue_cap.stl, play_cap.stl, knob.stl
 """
 from build123d import *
 import params as M

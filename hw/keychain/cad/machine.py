@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: CERN-OHL-S-2.0
 """machine.py: the whole keychain deck, every part placed by its mates. Checks every pair of
 parts for overlap, then exports GLBs for rendering (metres, Y-up):
-  build/deck.glb         assembled
-  build/deck_cut.glb     section through the jog axis (x <= axis)
-  build/deck_inside.glb  shell and caps hidden, to see the layout
+  build/<screen>/deck.glb         assembled (<screen> = KC_SCREEN: tft20 or oled095)
+  build/<screen>/deck_cut.glb     section through the jog axis (x <= axis)
+  build/<screen>/deck_inside.glb  shell and caps hidden, to see the layout
 python3 machine.py [--no-check]
 """
 import itertools, sys

@@ -7,7 +7,7 @@ magnet sits flush in the shaft tip, AIR_GAP over the AS5600 breakout on the base
 
 Print the platter upside down (shaft up). Local frame of every part: axis = z, z = 0 at its
 underside; STACK gives each part's world z, on the shell's jog axis.
-python3 jog.py -> build/platter.stl, collar.stl, fit_gauge.stl
+python3 jog.py -> build/<screen>/platter.stl, collar.stl, fit_gauge.stl
 """
 import math
 from build123d import *

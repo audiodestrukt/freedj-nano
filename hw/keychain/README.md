@@ -12,7 +12,7 @@ Two screens, picked with `make SCREEN=...` (or `KC_SCREEN=...` for the scripts):
 |---|---|---|
 | Screen | 2" ST7789 IPS, 320 x 240 (Waveshare-style 58 x 35 board), landscape across the deck | 0.95" SSD1331 OLED, 96 x 64 (generic 7-pin board), over the jog |
 | Active area | 40.8 x 30.6 mm | 20.1 x 13.4 mm |
-| Fader | 20 mm (35 mm frame): a longer one would run under the screen's board | 35 mm (50 mm frame) |
+| Fader | 20 mm (35 mm frame): a longer one would run under the screen's board | 30 mm, the common "45 mm" slide pot: M2 holes measured 40.5 apart |
 | Jack | left wall, between CUE and the screen | right wall, behind the fader |
 | Case | **65.8 x 76 x 18.2 mm** | **60.4 x 66.7 x 16.9 mm** |
 
@@ -68,8 +68,10 @@ the parts here. The ones that move things:
   (25 x 17) are measured. The board's outline (28.5 x 32.5, portrait) and the glass
   sitting 0.3 mm toward the pins come from scaling a photo by the holes: measure the board,
   and the glass edge to each hole row. Also glass + tape thickness (1.5).
-- **Fader**: frame (travel + 15 long, 9 wide, 6.5 deep, by the Bourns PTA rule), screw holes
-  (M2, frame - 4 apart; some have tabs instead), lever (1.2 x 4, 10 mm above the frame).
+- **Fader**: OLED case: holes measured (M2, 40.5 apart); travel (30) and frame (45 x 9 x 6.5)
+  assumed from them. 2" case: frame (travel + 15 long, 9 wide, 6.5 deep, by the Bourns PTA
+  rule), holes (frame - 4 apart; some have tabs instead). Both: lever (1.2 x 4, 10 mm above
+  the frame).
   The knob is 7.5 mm tall on the 2" case, 8.6 on the OLED one.
 - **XIAO S3** height above its board (3.3 assumed for the USB-C).
 - **Jack** body (12 x 6 x 5) and **LiPo** (4 x 20 x 30).
