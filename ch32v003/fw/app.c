@@ -159,11 +159,15 @@ static void push(void)
     else keylock();
 }
 
+__attribute__((weak)) int16_t hal_jog(void) { return 0; }   // no jog sensor: the EC11 only
+
 static void panel(void)
 {
     const uint8_t p = hal_pins();
     const uint8_t ab = p & (PIN_ENC_A | PIN_ENC_B);
     if (ab != s_ab) { s_enc += kQuad[s_ab << 2 | ab]; s_ab = ab; }
+    const int16_t j = hal_jog();
+    s_enc = (int8_t)(s_enc + (j > 60 ? 60 : j < -60 ? -60 : j));
 
     const uint32_t now = hal_ms();
     if (now - s_tick < 2) return;                 // buttons and pot every 2 ms

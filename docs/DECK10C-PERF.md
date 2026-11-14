@@ -69,7 +69,33 @@ is **waiting on the card**, not computing.
 
 RAM: 2007 of 2048 bytes used, **41 spare**. Flash: ~13.8 of 16 KB.
 
-## Done already
+## On the PY32F030 instead (2026-11-13, `make deckbench CHIP=py32`)
+
+Puya's PY32F030x8 (a ~10-cent Cortex-M0+, 48 MHz, **64 KB flash, 8 KB RAM**) runs the same
+firmware, unchanged, behind the same `hal.h`. deckbench builds it with the Arm GNU toolchain
+(Thumb, `-mcpu=cortex-m0plus`), runs the same session under `qemu-arm -cpu cortex-m0`, and
+counts it with an M0+ cycle model (Arm's published timings, 1 flash wait state, one bus for
+fetch and data; it assumes the fast single-cycle multiplier, which Puya doesn't state).
+
+| | CH32V003 | PY32F030, same 4-block ring | PY32F030, 8-block ring |
+|---|---|---|---|
+| average CPU (cycle model) | 39 % | 35 % | 35 % |
+| cycles per instruction | 2.59 | 2.11 | 2.11 |
+| worst step | **135 %: drops** | **119 %: drops** | **51 %** |
+| firmware flash (+ drivers, guessed) | 12.6 (+1.5) of 16 KB | 11.7 (+2) of 64 KB | 11.9 (+2) of 64 KB |
+| RAM (data + ring + stack) | 2007 of 2048 B | 2075 of 8192 B | 2331 of 8192 B |
+
+- **Per instruction it's faster, per job about the same.** Thumb needs ~10 % more instructions
+  than RV32EC with compressed code, but they run at 2.1 cycles, not 2.6, and the multiplies are
+  hardware (the mul/div runtime goes from 1.5 % of the CPU to 0.1 %).
+- **The worst step is still the SD card.** The same ~110-140 k cycles of polling, on either chip.
+- **What fixes it is the RAM.** An 8-block ring (512 B) is a 7-block cushion, 487 k cycles
+  (10 ms) instead of 209 k, and the worst step lands at half of it, with the waveform on. The
+  rest of the to-do list below gets easy too: the waveform's 64 B, the track list's names in
+  RAM, the engine's inner loops copied into RAM (no fetch wait), and ~5.8 KB still spare.
+- The PWM output is TIM1 at 48 MHz on both, so `make pwm` applies as is (`--rout` for the
+  GPIO's output resistance, a guess on both).
+
 
 | What | Why | Effect |
 |---|---|---|
@@ -136,8 +162,8 @@ NOR as a cache of the loaded track.
 
 | | |
 |---|---|
-| `make deckbench` | the whole firmware on the chip's instruction set in qemu: flash, RAM, stack, CPU by part, the worst steps and what's in them. **The measurement.** `DECKFLAGS=-DUI_NO_WAVE` without the waveform, `-DWAVE_DIV=2` waveform at 10 fps, `-DSD_STREAM=0` the old SD reads; `-DSD_ACCESS_US=...`, `-DSD_STALL_US=... -DSD_STALL_EVERY=...` for slower cards |
+| `make deckbench` (`CHIP=py32` for the PY32F030) | the whole firmware on the chip's instruction set in qemu: flash, RAM, stack, CPU by part, the worst steps and what's in them. **The measurement.** `DECKFLAGS=-DUI_NO_WAVE` without the waveform, `-DWAVE_DIV=2` waveform at 10 fps, `-DSD_STREAM=0` the old SD reads; `-DSD_ACCESS_US=...`, `-DSD_STALL_US=... -DSD_STALL_EVERY=...` for slower cards |
 | `make sim` | the deck in a window, playable (keyboard or the DJ2Go). Its CPU figure is an **estimate** (close on average, low on the worst step); its underrun count stays 0 because the PC is fast |
-| `make simtest` | 31 checks that the deck behaves |
+| `make simtest` | 36 checks that the deck behaves |
 | Phase 1 (chip) | real cycles per instruction (SysTick around `app_step()`) |
 | Phase 2 (card) | real access times and stalls, per card |

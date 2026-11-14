@@ -5,5 +5,9 @@
 // counted instructions (~16 cycles at 1.5 cycles each), so count.py charges it per byte.
 void spi_bus_byte(void)
 {
+#ifdef __arm__
+    __asm__ volatile(".syntax unified\n movs r3, #5\n1: subs r3, r3, #1\n bne 1b\n" ::: "r3", "cc");   // charged per byte anyway
+#else
     __asm__ volatile("li t1, 5\n1: addi t1, t1, -1\n bnez t1, 1b\n" ::: "t1");
+#endif
 }

@@ -17,11 +17,14 @@ static uint8_t  s_addr;                   // 1: its address went, the data is ne
 static uint8_t  s_frame;
 static uint32_t s_next;
 
+#ifndef UI_FLIP
+#define UI_FLIP 0                         // 1: rotate the picture 180 degrees (the module mounted the other way up)
+#endif
 static const uint8_t kInit[] = {
     0x00,                                 // commands
     0xAE, 0xD5, 0x80, 0xA8, 0x3F, 0xD3, 0x00, 0x40, 0x8D, 0x14,   // multiplex 64
     0x20, 0x00,                           // horizontal addressing: pages follow each other
-    0xA1, 0xC8, 0xDA, 0x12, 0x81, 0xCF, 0xD9, 0xF1, 0xDB, 0x40, 0xA4, 0xA6, 0xAF,   // alternate COM pins
+    UI_FLIP ? 0xA0 : 0xA1, UI_FLIP ? 0xC0 : 0xC8, 0xDA, 0x12, 0x81, 0xCF, 0xD9, 0xF1, 0xDB, 0x40, 0xA4, 0xA6, 0xAF,   // alternate COM pins
 };
 // Each page is addressed on its own (so a frame can leave some pages as they are).
 #define ADDR(p) { 0x00, 0x21, 0, 127, 0x22, p, p }

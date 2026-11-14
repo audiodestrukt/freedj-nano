@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Dan Newcome
 // SPDX-License-Identifier: GPL-3.0-or-later
-// The CH32V003 deck on the computer: the real firmware (fw/) on emulated parts.
+// The CH32V003 (or PY32F030) deck on the computer: the real firmware (fw/) on emulated parts.
 //
 //   SD card     sim/emu/sd_emu.c on SPI, holding a FAT32 image (tools/sdimage.py)
 //   OLED        sim/emu/oled_emu.c (SSD1306 128x64) parsing the I2C stream, drawn in a window
@@ -84,14 +84,23 @@ static double s_i2cDoneUs;
 // ---- CPU estimate. The firmware runs natively here, so its cycles are estimated from what it
 // does, at costs from sim/qemu's cycle model (make deckbench: ~2.3-2.6 cycles per instruction
 // on the QingKe V2A, flash fetch and taken branches). A guide; deckbench is the measurement.
-#define C_PAUSED    25      // per sample, not playing
-#define C_STRAIGHT  200     // per sample, varispeed at 1.00
-#define C_VARI      335     // per sample, varispeed at another speed
-#define C_KEYLOCK   350     // per sample, keylock between searches
-#define C_SEARCH    85000   // one keylock search and its read-ahead (every 256 samples)
-#define C_SPI_BYTE  30      // a polled SPI byte: the wire + the driver
-#define C_PAGE      13500   // rendering one OLED page
-#define C_STEP      2000    // the rest of a main-loop step
+// CHIP_PY32 (make sim CHIP=py32): the PY32F030's Cortex-M0+, which deckbench puts at ~0.9x the
+// QingKe's cycles for the same work (Thumb, hardware multiply); SPI bytes cost the same.
+#ifdef CHIP_PY32
+#define CHIP_NAME "PY32F030"
+#define CHIP_K    0.9
+#else
+#define CHIP_NAME "CH32V003"
+#define CHIP_K    1.0
+#endif
+#define C_PAUSED    (25 * CHIP_K)      // per sample, not playing
+#define C_STRAIGHT  (200 * CHIP_K)     // per sample, varispeed at 1.00
+#define C_VARI      (335 * CHIP_K)     // per sample, varispeed at another speed
+#define C_KEYLOCK   (350 * CHIP_K)     // per sample, keylock between searches
+#define C_SEARCH    (85000 * CHIP_K)   // one keylock search and its read-ahead (every 256 samples)
+#define C_SPI_BYTE  30                 // a polled SPI byte: the wire + the driver
+#define C_PAGE      (13500 * CHIP_K)   // rendering one OLED page
+#define C_STEP      (2000 * CHIP_K)    // the rest of a main-loop step
 #define RING_CYCLES (48e6 * (HAL_AUDIO_BLOCKS - 1) * HAL_AUDIO_BLOCK / RATE)
 static double   s_stepC, s_totalC, s_winC, s_winPeak, s_peak, s_cpuPct, s_peakPct;
 static uint16_t s_lastI;
@@ -425,7 +434,7 @@ static int runWindow(void)
 {
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)) { fprintf(stderr, "SDL: %s\n", SDL_GetError()); return 1; }
     const int W = 128 * o_scale, H = 64 * o_scale, PAD = 12, INFO = 4 * 10 * 2;
-    SDL_Window* win = SDL_CreateWindow("freedj nano: CH32V003 deck (sim)", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+    SDL_Window* win = SDL_CreateWindow("freedj nano: " CHIP_NAME " deck (sim)", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                                        W + 2 * PAD, H + 3 * PAD + INFO, 0);
     SDL_Renderer* ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_PRESENTVSYNC);
     SDL_AudioSpec want = {0}, have;

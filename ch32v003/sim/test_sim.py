@@ -14,7 +14,7 @@ import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "..")
 B = os.path.join(ROOT, "build", "simtest")
-SIM = os.path.join(ROOT, "build", "sim")
+SIM = os.path.join(ROOT, os.environ.get("SIM", "build/sim"))     # SIM=build/sim_py32 (make simtest CHIP=py32)
 RATE = 22050
 passed = failed = 0
 
@@ -223,7 +223,7 @@ def main():
     # ---- SD traffic: the CMD18 stream against single-block CMD17 reads, 5 s of playback
     script = "100 tap play\n5100 mark done\n"
     st, _, _ = session("sd_stream", script)
-    s17, _, _ = session("sd_cmd17", script, sim=SIM + "_cmd17")
+    s17, _, _ = session("sd_cmd17", script, sim=os.path.join(ROOT, "build", "sim_cmd17"))   # the SD protocol comparison: chip-independent
     per = lambda d: (d["[mark done]"]["sd_bytes"] - d["[press play]"]["sd_bytes"]) / 5.0
     cmds = lambda d: (d["[mark done]"]["sd_cmds"] - d["[press play]"]["sd_cmds"]) / 5.0
     bs, b17 = per(st), per(s17)

@@ -3,8 +3,8 @@
 #pragma once
 // What the deck firmware needs from the chip. ch32fun drivers implement it on the CH32V003
 // (phase 1-2); sim/host implements it on the computer with emulated parts (an SD card on
-// SPI, an SSD1306 on I2C, an EC11, buttons, a pot, a UART), and sim/qemu for the RV32EC
-// instruction count. The firmware is the same in all three.
+// SPI, an SSD1306 on I2C, an EC11, buttons, a pot, a UART), and sim/qemu for the RV32EC (and
+// PY32F030, Cortex-M0+) instruction count. The firmware is the same in all three.
 //
 // The main loop is app_step() over and over; nothing blocks for long except SD reads.
 
@@ -24,6 +24,8 @@ enum {
     PIN_PLAY = 8, PIN_CUE = 16, PIN_SHIFT = 32,
 };
 uint8_t  hal_pins(void);
+int16_t  hal_jog(void);                   // counts since the last call from a jog sensor (AS5600),
+                                          // as an EC11's; optional: 0 unless the HAL has one
 uint16_t hal_pot(void);                   // pitch pot, ADC 0..1023
 
 // ---- USART: the bridge from the computer (DJ2Go as 0x01 + a USB-MIDI packet, console keys)
@@ -41,7 +43,9 @@ int      hal_i2c_busy(void);
 // ---- audio: TIM1 PWM fed by circular DMA. HAL_AUDIO_BLOCKS blocks of HAL_AUDIO_BLOCK
 // samples, each sample two bytes, high then low duty (CH1, CH2).
 #define HAL_AUDIO_BLOCK  32
-#define HAL_AUDIO_BLOCKS 4
+#ifndef HAL_AUDIO_BLOCKS
+#define HAL_AUDIO_BLOCKS 4                // the PY32F030 has the RAM for more (deckbench -DHAL_AUDIO_BLOCKS=8)
+#endif
 uint8_t* hal_audio_block(void);           // the next free block to fill, or 0 if none is free
 void     hal_audio_commit(void);          // that block is filled
 

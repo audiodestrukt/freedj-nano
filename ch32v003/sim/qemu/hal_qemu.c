@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Dan Newcome
 // SPDX-License-Identifier: GPL-3.0-or-later
-// The deck firmware for RV32EC under qemu-riscv32 (user mode), for an instruction count of
+// The deck firmware for RV32EC under qemu-riscv32 (user mode), or for the PY32F030
+// (Cortex-M0+, Thumb) under qemu-arm, for an instruction count of
 // the whole main loop: the same HAL as sim/host, on the same emulated SD card and SSD1306
 // (compiled in; count.py leaves their instructions out), with a scripted session. The card
 // image comes in through Linux syscalls. Time is the audio consumed, one block per app_step.
@@ -12,7 +13,20 @@
 #define RATE   22059
 #define SPI_HZ 24000000
 
-// ---- syscalls (RVE: the number in t0)
+// ---- syscalls. RVE: the number in t0. Arm EABI (the PY32F030 build, Thumb under qemu-arm):
+// the number in r7, and its own numbers.
+#ifdef __arm__
+enum { SYS_OPENAT = 322, SYS_LLSEEK = 140, SYS_READ = 3, SYS_WRITE = 4 };
+static long sys(long n, long a, long b, long c, long d, long e)
+{
+    register long r7 __asm__("r7") = n;
+    register long r0 __asm__("r0") = a, r1 __asm__("r1") = b, r2 __asm__("r2") = c, r3 __asm__("r3") = d, r4 __asm__("r4") = e;
+    __asm__ volatile("svc #0" : "+r"(r0) : "r"(r7), "r"(r1), "r"(r2), "r"(r3), "r"(r4) : "memory");
+    return r0;
+}
+#define GET_SP(v) __asm__ volatile("mov %0, sp" : "=r"(v))
+#else
+enum { SYS_OPENAT = 56, SYS_LLSEEK = 62, SYS_READ = 63, SYS_WRITE = 64 };
 static long sys(long n, long a, long b, long c, long d, long e)
 {
     register long t0 __asm__("t0") = n;
@@ -20,7 +34,9 @@ static long sys(long n, long a, long b, long c, long d, long e)
     __asm__ volatile("ecall" : "+r"(a0) : "r"(t0), "r"(a1), "r"(a2), "r"(a3), "r"(a4) : "memory");
     return a0;
 }
-static void put(const char* s) { long n = 0; while (s[n]) n++; sys(64, 2, (long)s, n, 0, 0); }   // stderr: stdout is the trace
+#define GET_SP(v) __asm__ volatile("mv %0, sp" : "=r"(v))
+#endif
+static void put(const char* s) { long n = 0; while (s[n]) n++; sys(SYS_WRITE, 2, (long)s, n, 0, 0); }   // stderr: stdout is the trace
 static void putn(uint32_t v) { char b[12]; int i = 11; b[i] = 0; do { b[--i] = (char)('0' + v % 10); v /= 10; } while (v); put(b + i); }
 
 // ---- the session: what a person does, in ms
@@ -57,7 +73,7 @@ static const uint8_t kGray[4] = { 0, 1, 3, 2 };
 static void sp(void)
 {
     uintptr_t v;
-    __asm__ volatile("mv %0, sp" : "=r"(v));
+    GET_SP(v);
     if (v < s_spMin) s_spMin = v;
 }
 
@@ -102,8 +118,8 @@ static int readBlock(void* ctx, uint32_t lba, uint8_t* dst)
 {
     (void)ctx;
     long long r;
-    if (sys(62, s_fd, (long)(lba >> 23), (long)(lba << 9), (long)&r, 0)) return -1;   // llseek
-    return sys(63, s_fd, (long)dst, 512, 0, 0) == 512 ? 0 : -1;
+    if (sys(SYS_LLSEEK, s_fd, (long)(lba >> 23), (long)(lba << 9), (long)&r, 0)) return -1;   // llseek
+    return sys(SYS_READ, s_fd, (long)dst, 512, 0, 0) == 512 ? 0 : -1;
 }
 
 // count.py splits the trace here: one call per audio block consumed.
@@ -112,16 +128,16 @@ __attribute__((noinline)) void sim_event_mark(void) { __asm__ volatile(""); }
 
 int qemu_main(void)
 {
-    s_fd = sys(56, -100, (long)"build/simtest/sd.img", 0, 0, 0);   // openat(AT_FDCWD, ..., O_RDONLY)
+    s_fd = sys(SYS_OPENAT, -100, (long)"build/simtest/sd.img", 0, 0, 0);   // openat(AT_FDCWD, ..., O_RDONLY)
     if (s_fd < 0) { put("no build/simtest/sd.img (make simtest)\n"); return 2; }
     long long size = 0;
-    sys(62, s_fd, 0, 0, (long)&size, 2);                    // llseek to the end
+    sys(SYS_LLSEEK, s_fd, 0, 0, (long)&size, 2);                    // llseek to the end
     s_sd.read = readBlock;
     s_sd.blocks = (uint32_t)(size >> 9);
     sd_emu_reset(&s_sd);
     oled_emu_reset(&s_oled);
     hal_spi_fast(0);
-    __asm__ volatile("mv %0, sp" : "=r"(s_spTop));
+    GET_SP(s_spTop);
     s_spMin = s_spTop;
 
     app_init();
@@ -157,6 +173,10 @@ done:
 
 __attribute__((naked, section(".text.start"))) void _start(void)
 {
+#ifdef __arm__
+    __asm__ volatile("bl qemu_main\n movs r7, #1\n svc #0\n");          // exit(r0)
+#else
     __asm__ volatile(".option push\n .option norelax\n la gp, __global_pointer$\n .option pop\n"
                      "call qemu_main\n li t0, 93\n ecall\n");
+#endif
 }

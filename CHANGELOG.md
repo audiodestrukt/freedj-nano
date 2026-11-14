@@ -2,6 +2,37 @@
 
 Newest first. Each entry lists what changed, then the budget measured at that point.
 
+## 2026-11-14: hw/keychain, one jog bearing, the AS5600 screwed to the shell
+
+- One MR106ZZ pressed into the shell's boss onto a 1 mm ledge (was two), a glued collar under
+  it; the shaft is 5.6 mm long (was 9.6). The AS5600 breakout screws up onto four bosses that
+  come down from the top plate round the bearing boss (M2 x 6 thread-formers), chip up, the
+  magnet still 1.0 mm over it. The base is a flat plate with the battery pocket.
+- Both screens build watertight; fit check clean (27 parts). One 3 mm bearing lets the platter
+  rock more than two did: an MF106ZZ (flanged) or a tighter press if it shows.
+
+## 2026-11-14: ch32v003, the deck on a real PY32F030
+
+- `make py32` / `make flash-py32`: the same `fw/` on Puya's PY32F030x8 (Cortex-M0+, 64 KB
+  flash, 8 KB RAM), `py32/hal_py32.c` on Puya's CMSIS header. Runs on an EmbedFire
+  PY32F030K28 board, flashed by debugprobe on a Pico 2: keys, EC11, SSD1306 on I2C1, an
+  AS5600 jog on the same bus (new optional `hal_jog()`, 128 counts a turn), the SD card on
+  SPI1 (the cheap blue module on 5 V). Not yet: audio out (TIM1 + DMA), pot, USART, I2C DMA.
+- `MEMCARD=1`: no card, a short clip in flash on the simulator's emulated card
+  (`tools/memcard.py` keeps only the image's non-zero sectors). `UI_FLIP` for the OLED.
+- The board boots Puya's ROM while BOOT0 (PF4) floats: `py32/jump.py` starts the firmware
+  from the probe, PF4 to GND fixes it. `py32/watch.py` shows the AS5600 over SWD.
+- Simulators: `CHIP=py32` for `sim`, `simtest` and `deckbench` (Thumb under qemu-arm with an
+  M0+ cycle model). `HAL_AUDIO_BLOCKS` is overridable.
+- Write-up and the PY32-or-CH32 comparison: `ch32v003/py32/README.md`.
+
+| | CPU | worst step | CPI | RAM |
+|---|---|---|---|---|
+| CH32V003 | 39 % | 135 % (drops) | 2.59 | 2007 of 2048 B |
+| PY32F030, 8-block ring | 35 % | 51 % | 2.11 | 2331 of 8192 B |
+
+Firmware: 58.8 KB flash with the `MEMCARD=1` clip, 2.6 KB RAM. simtest 36/36 for both chips.
+
 ## 2026-11-11: hw/puck, a round deck with the whole top as the jog
 
 - build123d CAD, 65 mm across x 33.1 mm tall. Waveshare 1.28" round touch LCD (GC9A01 +

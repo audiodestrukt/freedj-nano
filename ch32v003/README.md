@@ -13,8 +13,8 @@ parts. The plan, the budgets and the results: [../docs/DECK10C.md](../docs/DECK1
 | `fw/` | the deck firmware: `app.c` (transport, controls, DJ2Go map), `ui.c` (SSD1306 128x64, a page at a time), `sd.c` (SD over SPI, streaming reads), `tracks.c` (TRACKS.BIN), Petit FatFs (`pff/`, ChaN, 1-clause BSD), all behind `hal.h` |
 | `sim/host/` | the firmware on the computer: an SDL window (the 128x64 OLED), sound, keyboard and mouse wheel as the panel, a pty for `midi_bridge.py`, or the DJ2Go read directly; headless with a script |
 | `sim/emu/` | the emulated parts, shared with the qemu run: an SDHC card on SPI (`sd_emu.c`), an SSD1306 on I2C (`oled_emu.c`) |
-| `sim/qemu/` | the same firmware for RV32EC under qemu-riscv32 with a scripted session: every instruction counted, by part |
-| `sim/test_sim.py` | scripted sessions through the sim, checked (31 checks) |
+| `sim/qemu/` | the same firmware for RV32EC under qemu-riscv32 with a scripted session: every instruction counted, by part; `run_py32.sh` does the same for the PY32F030 (Cortex-M0+ under qemu-arm) |
+| `sim/test_sim.py` | scripted sessions through the sim, checked (36 checks) |
 | `tools/` | `pack_lite.py` (audio files -> TRACKS.BIN), `sdimage.py` (a FAT32 card image) |
 | `sim/pwm_sim.py` | the PWM audio output modelled: TIM1's two pins, the resistor sum and the filter, solved exactly per pulse; measurements and listening WAVs |
 
@@ -25,7 +25,20 @@ make pwm      # numpy, scipy (and ngspice for the self-test); IN=song.wav to hea
 make sim      # the deck in a window (SDL2); MUSIC="a.mp3 b.wav" picks the tracks (ffmpeg)
 make simtest  # scripted sessions, checked
 make deckbench  # whole firmware in qemu: flash, RAM, stack, CPU by part, worst step
+
+make sim CHIP=py32        # the same, as the PY32F030: an 8-block audio ring, its cycle costs
+make simtest CHIP=py32
+make deckbench CHIP=py32  # Thumb under qemu-arm -cpu cortex-m0 (the Arm GNU toolchain, no Docker)
 ```
+
+### The PY32F030 instead
+
+The same firmware builds for Puya's PY32F030x8 (Cortex-M0+, 48 MHz, 64 KB flash, 8 KB RAM).
+On deckbench it's 35 % of the CPU against the CH32V003's 39 %, and with the RAM for an 8-block
+audio ring its worst step is 51 % of the cushion instead of 135 %. The comparison:
+[../docs/DECK10C-PERF.md](../docs/DECK10C-PERF.md#on-the-py32f030-instead-2026-11-13-make-deckbench-chippy32).
+It runs on a real PY32 board (all but the audio out so far): wiring, programmer, build and
+flash in [py32/README.md](py32/README.md).
 
 ### The deck on the computer (`make sim`)
 
