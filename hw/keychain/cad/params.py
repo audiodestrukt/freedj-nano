@@ -10,7 +10,8 @@ z up (0 = underside of the base plate). Built around:
                with a 20 mm fader (a longer one would run under the screen's board)
       oled095  generic 0.95" SSD1331 colour OLED (96 x 64), with a 35 mm fader
   - a generic slide pot with a T-shaft (pitch), down the right side from the front edge
-  - the AS5600 breakout freedj-esp uses (23.8 mm square), under a 32 mm jog
+  - the AS5600 breakout freedj-esp uses (23.8 mm square), screwed to the shell under a 32 mm
+    jog on one MR106ZZ
   - CUE / PLAY on 6 x 6 tact switches, a 402030 LiPo, a PCM5102A and a 3.5 mm jack
     on one main PCB (the XIAO sits on it).
 
@@ -92,29 +93,35 @@ WELL_DEPTH = 0.8
 FLOOR = H - WELL_DEPTH
 PLATTER_H = 4.5
 PLATTER_GAP = 0.6                    # platter underside above the well floor
-# Two MR106ZZ (6 x 10 x 3) in a boss under the well, a 1 mm ledge between them.
+# One MR106ZZ (6 x 10 x 3) pressed into a boss under the well from above, onto a 1 mm ledge.
 BRG = (6.0, 10.0, 3.0)
 BRG_LEDGE = 1.0
 BRG_INNER_OD = 7.2                   # inner race OD: hub and collar stay inside it
 BOSS_WALL = 1.6
 BOSS_OD = BRG[1] + 2 * BOSS_WALL
-BOSS_BOTTOM = FLOOR - 2 * BRG[2] - BRG_LEDGE
+BRG_BOTTOM = FLOOR - BRG[2]
+BOSS_BOTTOM = BRG_BOTTOM - BRG_LEDGE
 # Shaft printed with the platter (6 mm, tune on a fit gauge), magnet flush in its tip.
-# A printed collar glued on under the lower bearing holds it in.
+# A printed collar glued on under the bearing (inside the ledge's bore) holds it in.
 SHAFT_D = 6.0
 COLLAR = (BRG_INNER_OD, 1.5)         # OD, height
-SHAFT_PAST = COLLAR[1] + 0.5         # shaft below the lower bearing
-SHAFT_BOTTOM = BOSS_BOTTOM - SHAFT_PAST
+SHAFT_PAST = COLLAR[1] + 0.5         # shaft below the bearing
+SHAFT_BOTTOM = BRG_BOTTOM - SHAFT_PAST
 MAGNET = (4.0, 2.0)                  # diametric, same as freedj-esp
 MAGNET_FIT = 0.15
 AIR_GAP = 1.0                        # magnet to chip
-ENC_PCB = (23.8, 23.8, 1.6)          # AS5600 breakout, chip side up, wires soldered (no headers)
+# AS5600 breakout, chip side up, screwed straight to four bosses that come down from the
+# shell round the bearing boss (M2 thread-formers up through the board's holes).
+ENC_PCB = (23.8, 23.8, 1.6)          # wires soldered (no headers)
 ENC_CHIP_H = 1.5
 _h = 15.875 / 2
 ENC_HOLES = [(-_h, -_h), (_h, -_h), (-_h, _h), (_h, _h)]
 ENC_Z = SHAFT_BOTTOM - AIR_GAP - ENC_CHIP_H - ENC_PCB[2]   # board underside
-ENC_STANDOFF = ENC_Z - BASE_T
-assert ENC_STANDOFF >= 1.0, ("encoder board too low: raise H", ENC_STANDOFF)
+ENC_TOP = ENC_Z + ENC_PCB[2]
+ENC_BOSS_D = 4.5
+ENC_PILOT = (1.6, 5.0)               # M2 thread-former: dia, depth up from the board
+assert math.hypot(_h, _h) - ENC_BOSS_D / 2 > BOSS_OD / 2 + 0.5, "encoder bosses run into the bearing boss"
+assert ENC_Z > BASE_T + 1.0, ("encoder board too low over the base", ENC_Z)
 assert H - WELL_DEPTH - TOP_UNDER >= 0.6, "top too thin under the jog well"
 
 # ---------------------------------------------------------------- CUE / PLAY
@@ -252,6 +259,6 @@ def place(solid, frm: Location, onto: Location):
 
 if __name__ == "__main__":
     print(f"keychain deck ({SCREEN}) {W} x {D} x {H:.1f} mm" + (f" (+{TAB[1]} tab)" if KEYRING else "") + f", platter top at {FLOOR + PLATTER_GAP + PLATTER_H:.1f}")
-    print(f"  jog: floor {FLOOR:.1f}, boss {BOSS_BOTTOM:.1f}, shaft tip {SHAFT_BOTTOM:.1f}, encoder board on {ENC_STANDOFF:.2f} mm bosses")
+    print(f"  jog: floor {FLOOR:.1f}, bearing {BRG_BOTTOM:.1f}-{FLOOR:.1f}, boss {BOSS_BOTTOM:.1f}, shaft tip {SHAFT_BOTTOM:.1f}, encoder board {ENC_Z:.1f}-{ENC_TOP:.1f} (bosses {TOP_UNDER - ENC_TOP:.1f} long)")
     print(f"  stack: main PCB {MAIN_Z:.1f}-{MAIN_TOP:.1f}, XIAO top {XIAO_TOP:.1f}, screen {SCR_Z:.1f}, glass top {GLASS_TOP:.1f}")
     print(f"  pot: {POT_TRAVEL:.0f} mm travel, frame y {POT_C - POT_FRAME[1] / 2:.1f}-{POT_C + POT_FRAME[1] / 2:.1f}, knob {KNOB_H:.1f} tall; screen board from y {SCR_FRONT:.1f}; jack {JACK_SIDE}")

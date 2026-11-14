@@ -43,8 +43,8 @@ the 23.8 mm breakout.
 | Part | Where | Notes |
 |---|---|---|
 | Screen | behind the jog, glass behind a chamfered window | 4 M2 bosses on its holes. 2": the 6 mm PH2.0 socket on the back must come off (it would sit on the main PCB), so wire to the 8 header holes at the left end. OLED: header on the edge toward the jog |
-| Jog, 32 mm (34.5 mm well) | beside CUE / PLAY, front edge 0.5 mm behind PLAY's | printed platter + 6 mm shaft, two MR106ZZ (6 x 10 x 3), glued collar, 4 x 2 diametric magnet 1.0 mm over the AS5600 |
-| AS5600 breakout (23.8 mm, freedj-esp's) | on the base under the jog, in a well in the main PCB | wires soldered straight on (no headers: they'd need 14 mm each side) |
+| Jog, 32 mm (34.5 mm well) | beside CUE / PLAY, front edge 0.5 mm behind PLAY's | printed platter + 6 mm shaft, one MR106ZZ (6 x 10 x 3) pressed into the shell's boss onto a 1 mm ledge, glued collar under it, 4 x 2 diametric magnet 1.0 mm over the AS5600 |
+| AS5600 breakout (23.8 mm, freedj-esp's) | screwed to four bosses that come down from the shell round the bearing boss, chip up at the magnet; over a well in the main PCB | M2 thread-formers up through its holes; wires soldered straight on (no headers: they'd need 14 mm each side) |
 | CUE / PLAY, 8 mm caps | stacked in the bottom-left corner, CUE on top | sized to the jog the way freedj-esp's 22 mm caps are to its 100 mm jog; 6 x 6 x 5 mm SMD tact switches |
 | Fader | right side, frame 0.3 mm off the front wall | hangs from the top on 2 x M2 countersunk (on 1.3 mm pads in the taller 2" case, so its pins still reach through the main PCB) |
 | XIAO ESP32-S3 | back, under the screen, flat on the main PCB | USB-C out the back wall (stick, charging, flashing) |
@@ -87,13 +87,13 @@ Change them in `params.py`, run `make`, and the fit check says if anything now c
 | `shell.stl` | 1 | upside down, no supports |
 | `base.stl` | 1 | flat |
 | `platter.stl` | 1 | upside down, shaft up |
-| `collar.stl` | 1 | glue onto the shaft under the lower bearing |
+| `collar.stl` | 1 | glue onto the shaft under the bearing |
 | `cue_cap.stl`, `play_cap.stl` | 1 each | upside down; fill the icons with paint |
 | `knob.stl` | 1 | socket down |
 | `fit_gauge.stl` | optional | shaft sizes for the MR106 before printing the platter |
 
-Hardware: 2 x MR106ZZ, 4 x 2 mm diametric magnet, 4 x M2 x 5 countersunk (base, into 1.6 mm
-pilots in the shell's bosses), 4 x M2 x 4 thread-formers (screen), 4 x M2 x 4 (AS5600),
+Hardware: 1 x MR106ZZ, 4 x 2 mm diametric magnet, 4 x M2 x 5 countersunk (base, into 1.6 mm
+pilots in the shell's bosses), 4 x M2 x 4 thread-formers (screen), 4 x M2 x 6 thread-formers (AS5600, up into the shell's bosses),
 2 x M2 countersunk for the fader (x 3 on the OLED case, x 5 through the pads on the 2").
 
 ## Buttons for prototyping

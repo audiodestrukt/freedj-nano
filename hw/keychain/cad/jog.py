@@ -1,9 +1,9 @@
 # SPDX-FileCopyrightText: 2026 Dan Newcome
 # SPDX-License-Identifier: CERN-OHL-S-2.0
-"""jog.py: the 32 mm jog. Platter with its 6 mm shaft printed in one piece, through two
-MR106ZZ (6 x 10 x 3) in the shell's boss; a printed collar glued on under the lower bearing
-holds it in (hub on the upper inner race, collar on the lower one). The 4 x 2 diametric
-magnet sits flush in the shaft tip, AIR_GAP over the AS5600 breakout on the base.
+"""jog.py: the 32 mm jog. Platter with its 6 mm shaft printed in one piece, through one
+MR106ZZ (6 x 10 x 3) pressed into the shell's boss; a printed collar glued on under the
+bearing holds it in (hub on top of the inner race, collar under it). The 4 x 2 diametric
+magnet sits flush in the shaft tip, AIR_GAP over the AS5600 breakout screwed to the shell.
 
 Print the platter upside down (shaft up). Local frame of every part: axis = z, z = 0 at its
 underside; STACK gives each part's world z, on the shell's jog axis.
@@ -37,7 +37,7 @@ def platter():
     return p.cut(*cuts)
 
 def shaft():
-    """In the platter frame: down through both bearings to SHAFT_BOTTOM, magnet pocket in the tip."""
+    """In the platter frame: down through the bearing to SHAFT_BOTTOM, magnet pocket in the tip."""
     r, lead = M.SHAFT_D / 2, 0.4
     z0 = -SHAFT_L
     s = Pos(0, 0, z0 + lead) * Cylinder(r, SHAFT_L - lead + 0.5, align=C)
@@ -74,9 +74,8 @@ def encoder_chip():
 
 STACK = {   # world z of each part's underside, on the jog axis
     "platter":     PLATTER_Z,
-    "bearing_top": M.FLOOR - M.BRG[2],
-    "bearing_bot": M.BOSS_BOTTOM,
-    "collar":      M.BOSS_BOTTOM - M.COLLAR[1] - 0.05,
+    "bearing":     M.BRG_BOTTOM,
+    "collar":      M.BRG_BOTTOM - M.COLLAR[1] - 0.05,
     "magnet":      M.SHAFT_BOTTOM,
     "encoder_pcb": M.ENC_Z,
     "encoder_chip": M.ENC_Z + M.ENC_PCB[2],

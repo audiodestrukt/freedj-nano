@@ -3,7 +3,7 @@
 """shell.py: the keychain deck's top shell. One print, upside down on the bed, no supports
 (the keyring tab is flush with the top, the bosses hang off the top plate).
 
-Carries the jog well and the MR106 bearing boss, the CUE / PLAY holes, the fader slot with
+Carries the jog well, the MR106 bearing boss and the four bosses the AS5600 breakout screws to, the CUE / PLAY holes, the fader slot with
 countersunk M2s into the pot frame, the screen window (chamfered) and its four bosses, the
 USB-C and headphone-jack openings, four short corner bosses for the base, and the keyring tab.
 python3 shell.py -> build/<screen>/shell.stl
@@ -55,6 +55,8 @@ def part():
     jx, jy = M.JOG_C
     inside = _plan(M.WALL - 0.01, 0, M.H)
     adds = [Pos(jx, jy, M.BOSS_BOTTOM) * Cylinder(M.BOSS_OD / 2, M.TOP_UNDER - M.BOSS_BOTTOM + 0.5, align=C)]
+    for x, y in M.ENC_HOLES:   # the encoder board hangs from these, chip up at the magnet
+        adds.append(Pos(jx + x, jy + y, M.ENC_TOP) * Cylinder(M.ENC_BOSS_D / 2, M.TOP_UNDER - M.ENC_TOP + 0.5, align=C))
     ph = M.POST_TOP - M.BASE_T
     for x, y, walls in posts(webs=True):   # short bosses, webbed into the walls
         adds.append(Pos(x, y, M.BASE_T) * Cylinder(M.POST_D / 2, ph, align=C))
@@ -71,9 +73,10 @@ def part():
     cuts = []
     cuts.append(Pos(jx, jy, M.FLOOR) * Cylinder(M.WELL_D / 2, 10, align=C))
     b_id, b_od, b_w = M.BRG
-    cuts.append(Pos(jx, jy, M.FLOOR - b_w) * Cylinder(b_od / 2 + 0.05, b_w + 1, align=C))       # upper bearing
-    cuts.append(Pos(jx, jy, M.BOSS_BOTTOM - 1) * Cylinder(b_od / 2 + 0.05, b_w + 1, align=C))   # lower bearing
-    cuts.append(Pos(jx, jy, 0) * Cylinder(b_od / 2 - 1.0, 30, align=C))                         # the ledge between
+    cuts.append(Pos(jx, jy, M.BRG_BOTTOM) * Cylinder(b_od / 2 + 0.05, b_w + 1, align=C))   # the bearing, pressed in from above
+    cuts.append(Pos(jx, jy, 0) * Cylinder(b_od / 2 - 1.0, 30, align=C))                   # the ledge under it (the collar turns inside)
+    for x, y in M.ENC_HOLES:
+        cuts.append(Pos(jx + x, jy + y, M.ENC_TOP - 0.01) * Cylinder(M.ENC_PILOT[0] / 2, M.ENC_PILOT[1] + 0.01, align=C))
     for c in (M.CUE_C, M.PLAY_C):
         cuts.append(Pos(*c, M.TOP_UNDER - 1) * Cylinder(M.BTN_HOLE / 2, M.TOP_T + 2, align=C))
     y0, y1 = M.SLIDER_Y

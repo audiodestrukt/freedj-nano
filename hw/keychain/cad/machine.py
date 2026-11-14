@@ -50,8 +50,8 @@ def scene_parts():
     add("shell", shell.part(), "shell")
     add("base", place(base.part(), base.MATES["to_shell"], S["base"]), "base")
     axis = Pos(*M.JOG_C, 0)
-    for key, fn, lk in (("platter", jog.platter, "platter"), ("bearing_top", jog.bearing, "steel"),
-                        ("bearing_bot", jog.bearing, "steel"), ("collar", jog.collar, "collar"),
+    for key, fn, lk in (("platter", jog.platter, "platter"), ("bearing", jog.bearing, "steel"),
+                        ("collar", jog.collar, "collar"),
                         ("magnet", jog.magnet, "magnet"), ("encoder_pcb", jog.encoder_pcb, "pcb_purple"),
                         ("encoder_chip", jog.encoder_chip, "chip")):
         add(key, place(fn(), jog.MATES["seat"], axis * Pos(0, 0, jog.STACK[key])), lk)
