@@ -2,6 +2,23 @@
 
 Newest first. Each entry lists what changed, then the budget measured at that point.
 
+## 2026-11-25: ch32v003, the deck on an M-VAVE FM-1 (fm1-dock module, fm1-emu), tracks over USB
+
+- `make fm1`: the same `fw/` as an fm1-dock module (`fm1/hal_fm1.c`) for the FM-1 pocket synth
+  (JieLi AC791N, JieLi's Linux toolchain), with a clip in its flash. SELECT jogs, FX + SELECT
+  browses, EDIT loads / keylock, KNOB1 tempo, SEQ CUE, PLAY; MIDI IN takes the DJ2Go map.
+  `make fm1-emu` / `fm1-live` run it in fm1-emu (headless or a window).
+- The screen: the OLED's pages laid out on the 240 x 240 colour panel, the waveform coloured by
+  loudness, the overview drawn from the track's columns; the top line the deck's, with a CPU meter
+  of its main-loop work (~20 % playing in fm1-emu).
+- `make fm1-usb` / `fm1-usb-live`: the tracks from the computer over USB (`tools/fm1host.py` serves
+  a card image over fm1-dock's USB-MIDI): a 128 KB read-ahead cache, peaks cached apart, the paused
+  deck's position fetched before PLAY, half-block frames pipelined with filler, gaps asked for again
+  by the module. Four full tracks play with no missed blocks in fm1-emu.
+- `tools/memcard.py`: `sectors()` importable. Outside the repo, local and not upstream: fm1-dock's
+  `tools/dock.py` passes a big deploy script as a file; fm1-emu's `FM1_USB_OUT_PER_FRAME`.
+- Next: a probe for USB host mode on a real FM-1 (a stick in place of the SD card).
+
 ## 2026-11-14: hw/keychain, one jog bearing, the AS5600 screwed to the shell
 
 - One MR106ZZ pressed into the shell's boss onto a 1 mm ledge (was two), a glued collar under

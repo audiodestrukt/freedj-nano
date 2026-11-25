@@ -40,6 +40,11 @@ audio ring its worst step is 51 % of the cushion instead of 135 %. The compariso
 It runs on a real PY32 board (all but the audio out so far): wiring, programmer, build and
 flash in [py32/README.md](py32/README.md).
 
+### On an M-VAVE FM-1
+
+`make fm1` builds the deck as a module for fm1-dock on the FM-1 pocket synth, and `make fm1-emu`
+/ `make fm1-live` run it in fm1-emu: [fm1/README.md](fm1/README.md).
+
 ### The deck on the computer (`make sim`)
 
 The real firmware, unchanged, on emulated parts: the SD card answers SPI byte by byte from a
