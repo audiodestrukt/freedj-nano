@@ -29,12 +29,15 @@ from memcard import sectors  # noqa: E402
 MAN = bytes([0x7D, 0x48, 0x42])
 MODULE = 0x23
 PIN_MAX = 48
-WINDOW = 16                                     # frames in flight (an answer takes ~50 ms to come back through fm1-live: 4 capped it at ~40 blocks a second)
+# frames in flight: fm1-dock keeps 4 waiting (src/dock.c DF_USB_Q) and drops the next; on a real FM-1 the
+# answers come back in a few ms, so 4 keeps up. fm1-live's take ~50 ms (4 there capped it at ~40 blocks a
+# second), and it takes them more slowly, so 16 there.
+WINDOW = int(os.environ.get("FM1HOST_WINDOW", "0"))
 # fm1-dock holds one SysEx frame until its main loop takes it, and drops one that starts arriving before: after
 # each frame, 32 MIDI events of nothing (CC 112 on channel 16, which the module ignores: 2 USB packets). A frame
 # still lost now and then costs little: the module asks again. More filler is traffic too: fm1-dock takes about
 # one packet a millisecond in fm1-emu, and at 96 the stream fell just short of what the deck plays
-FILLER = int(os.environ.get("FM1HOST_FILLER", "32"))
+FILLER = int(os.environ.get("FM1HOST_FILLER", "0"))   # 0: 32 for fm1-live, 48 for an FM-1 (below)
 LOST_S = 0.5                                    # no answer to a frame in flight for this long: its slot is freed
 
 
@@ -121,9 +124,13 @@ class Host:
         end = time.monotonic() + 60
         while True:                             # wait for it (fm1-live takes a few seconds to enumerate);
             names, ins = self.out.get_ports(), self.inp.get_ports()   # several: the newest, listed last
-            o = [i for i, n in enumerate(names) if port.lower() in n.lower()]
-            i_ = [i for i, n in enumerate(ins) if port.lower() in n.lower()]
+            for want in ([port] if port else ["(emu)", "Felucca"]):   # fm1-live's, else a real FM-1's (fm1-dock)
+                o = [i for i, n in enumerate(names) if want.lower() in n.lower()]
+                i_ = [i for i, n in enumerate(ins) if want.lower() in n.lower()]
+                if o and i_:
+                    break
             if o and i_:
+                port = want
                 break
             if time.monotonic() > end:
                 raise SystemExit(f"no MIDI port with {port!r} in its name: {names}")
@@ -136,8 +143,14 @@ class Host:
         self.inp.open_port(i_[-1])
         self.inp.ignore_types(sysex=False, timing=True, active_sense=True)
         print(f"on {names[o[-1]]}")
+        emu = "(emu)" in names[o[-1]]
+        self.window = WINDOW or (16 if emu else 4)
+        # the filler after a frame: fm1-dock takes the next frame only once its main loop has passed by (one
+        # frame held at a time, in the USB interrupt); on an FM-1 48 events are ~1.5 ms of USB polls
+        self.filler = FILLER or (32 if emu else 48)
         self.seq, self.cc, self.job, self.place, self.oneoffs = 0, {}, None, None, []
         self.passes = self.misses = self.cpu = 0
+        self.longest = (0, 0)
         self.flight = collections.deque()      # (seq, when, block or None) sent, not yet answered
         self.sent, self.t0, self.busy, self.frames, self.losses = 0, time.monotonic(), 0.0, 0, 0
 
@@ -163,6 +176,8 @@ class Host:
                     self.job = ("boot",)
                 elif msg[1] == 113:
                     self.cpu = msg[2]
+                elif msg[1] == 115:
+                    self.longest = (self.cc.get(114, 0) / 10, msg[2] / 10)
                 elif msg[1] == 111:
                     self.passes = self.cc.get(109, 0) | self.cc.get(110, 0) << 7
                     self.misses = msg[2]
@@ -216,7 +231,7 @@ class Host:
     # control: fm1-dock holds one frame at a time). Nothing is resent from here: the module sees which blocks
     # never came and asks for them again.
     def stream(self, payload, blk):
-        while len(self.flight) >= WINDOW:
+        while len(self.flight) >= self.window:
             self.drain()
             time.sleep(0.0003)
         self.seq = (self.seq + 1) & 0x7F
@@ -254,7 +269,7 @@ class Host:
         b = self.card.get(n)
         for h in (0, 1):
             self.stream(b"H" + struct.pack("<IB", n, h) + b[256 * h:256 * h + 256], n if h else None)
-            for _ in range(FILLER):
+            for _ in range(self.filler):
                 self.out.send_message([0xBF, 112, 0])
 
     def run(self):
@@ -269,7 +284,8 @@ class Host:
             now = time.monotonic()
             if now - self.t0 >= 5:
                 print(f"{self.sent / (now - self.t0):.0f} blocks/s (the deck plays 43); lost and sent again: {self.losses}; "
-                      f"the module: CPU {self.cpu} %, {self.passes} passes a second, {self.misses} blocks missed in its last second")
+                      f"the module: CPU {self.cpu} %, {self.passes} passes a second, {self.misses} blocks missed in its last second; "
+                      f"longest pass {self.longest[0]:.1f} ms (a page {self.longest[1]:.1f})")
                 self.sent, self.t0, self.losses = 0, now, 0
 
     def step(self):
@@ -298,7 +314,7 @@ class Host:
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("image", help="a card image from tools/sdimage.py")
-    ap.add_argument("--port", default="(emu)", help="part of the FM-1's MIDI port name")
+    ap.add_argument("--port", default="", help="part of the FM-1's MIDI port name (default: fm1-live's \"(emu)\", else \"Felucca\", a real FM-1)")
     a = ap.parse_args()
     Host(Card(a.image), a.port).run()
 

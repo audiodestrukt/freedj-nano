@@ -149,6 +149,7 @@ static uint8_t  s_ab, s_stable, s_last;
 static int8_t   s_enc;
 static uint32_t s_tick;
 static uint16_t s_pot = 0xFFFF;
+static uint8_t  s_shiftTurn, s_shiftList;         // SHIFT held: turned since; the list was open when it went down
 // (previous AB << 2 | AB): +1 clockwise, -1 counter-clockwise, 0 no move or a bounce
 static const int8_t kQuad[16] = { 0, 1, -1, 0, -1, 0, 0, 1, 1, 0, 0, -1, 0, -1, 1, 0 };
 
@@ -179,11 +180,14 @@ static void panel(void)
         if ((on | off) & PIN_PLAY) play(!!(on & PIN_PLAY));
         if ((on | off) & PIN_CUE) cue(!!(on & PIN_CUE));
         if (on & PIN_PUSH) push();
+        if (on & PIN_SHIFT) { s_shiftTurn = 0; s_shiftList = g_app.browsing; }
+        if ((off & PIN_SHIFT) && !s_shiftTurn && s_shiftList) g_app.browsing = 0;   // SHIFT tapped in the list: out
     }
     s_last = b;
 
-    if (s_stable & PIN_SHIFT) {                   // one list row per detent (4 counts)
-        while (s_enc >= 4) { browse(1); s_enc -= 4; }
+    if ((s_stable & PIN_SHIFT) || g_app.browsing) {   // SHIFT + turn opens the list; in it, the turn alone moves
+        if (s_stable & PIN_SHIFT && (s_enc >= 4 || s_enc <= -4)) s_shiftTurn = 1;
+        while (s_enc >= 4) { browse(1); s_enc -= 4; }  //  (one row per detent, 4 counts); the push loads
         while (s_enc <= -4) { browse(-1); s_enc += 4; }
     } else if (s_enc) {
         jog(s_enc); s_enc = 0;

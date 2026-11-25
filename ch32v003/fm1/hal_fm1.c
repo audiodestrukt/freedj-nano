@@ -4,7 +4,8 @@
 // the deck runs on an M-VAVE FM-1, or in fm1-emu. fm1-dock keeps USB, the installer and the
 // rescue; this file turns its events, its audio callback and its screen into what fw/ expects.
 //
-//   SELECT    the jog (SHIFT + SELECT: the track list)       PLAY  PLAY
+//   SELECT    the jog (FX + SELECT opens the track list; in   PLAY  PLAY
+//             it SELECT moves, its push loads, FX tapped closes)
 //   KNOB1     the tempo (the pot: 512 is 0 %)                SEQ   CUE (left of PLAY, as on a CDJ)
 //   FX        SHIFT                                          EDIT  the encoder's push: keylock,
 //   MIDI IN   the DJ2Go map, as over the CH32's bridge             load in the list
@@ -39,6 +40,7 @@ static uint8_t btnPin(uint32_t id)
     case HB_BTN_SEQ:  return PIN_CUE;
     case HB_BTN_FX:   return PIN_SHIFT;
     case HB_BTN_EDIT: return PIN_PUSH;
+    case HB_BTN_SEL:  return PIN_PUSH;            // SELECT's own push: loads in the list, as EDIT
     }
     return 0;
 }
@@ -293,7 +295,25 @@ static uint8_t  s_oled[UI_PAGES][128];
 static uint8_t  s_dirty = 0xFF;                   // a bit a page
 static uint8_t  s_curPage;
 static uint8_t  s_layout = 0xFF;                  // 0 deck, 1 list
+// The panel is on a 12 MHz SPI with no vsync (fm1-dock doesn't turn on its TE): a waveform band (240 x 30, 14 KB)
+// takes ~10 ms to go, the overview ~14, and fm1-dock's blit() waits until all of it has gone. The main loop
+// is also where the blocks from the computer are taken, and fm1-dock holds one frame of them at a time (the
+// next one that starts coming in meanwhile, ~1 ms later, is dropped): so a band is drawn here whole, then sent STRIP
+// rows a pass, and the next band only once it has all gone.
+#define STRIP 2u                          // ~0.6 ms: under the ~1 ms between two frames from the computer
 static uint16_t s_px[SCALE_W * 44];               // the tallest band, as the panel takes it
+static uint32_t s_maxWork, s_maxPut;              // the longest main-loop pass, and page put, this second (ticks)
+static int32_t  s_sendY;                          // the band being sent: its top on the panel,
+static uint32_t s_sendH, s_sendRow;               //  its height, the rows gone
+static void blit(int32_t y0, uint32_t h) { s_sendY = y0; s_sendH = h; s_sendRow = 0; }
+static int lcdFree(void) { return s_sendRow >= s_sendH; }
+static void pump(void)                            // the next strip of the band being sent
+{
+    if (lcdFree()) return;
+    const uint32_t k = s_sendH - s_sendRow < STRIP ? s_sendH - s_sendRow : STRIP;
+    H->blit(0, s_sendY + (int32_t)s_sendRow, SCALE_W, (int32_t)k, s_px + s_sendRow * SCALE_W);
+    s_sendRow += k;
+}
 
 void hal_i2c_send(uint8_t addr, const uint8_t* p, uint16_t n)
 {
@@ -331,7 +351,7 @@ static void putText(uint8_t page, int32_t y0, uint8_t h)
         uint16_t* d = s_px + y * SCALE_W;
         for (uint16_t x = 0; x < SCALE_W; x++) d[x] = s_oled[page][kSrcX[x]] >> bit & 1 ? ink : 0;
     }
-    H->blit(0, y0, SCALE_W, h, s_px);
+    blit(y0, h);
 }
 
 // a waveform page (4..6) at 30 px: the colour from how far the row is from the middle of the three
@@ -339,10 +359,22 @@ static const uint16_t kWave[12] = {               // 0 = the middle .. 11 = the 
     HB_RGB(0, 60, 170), HB_RGB(0, 80, 195), HB_RGB(0, 100, 215), HB_RGB(0, 125, 235), HB_RGB(10, 150, 250), HB_RGB(30, 175, 255),
     HB_RGB(60, 195, 255), HB_RGB(100, 210, 255), HB_RGB(140, 225, 255), HB_RGB(180, 238, 255), HB_RGB(215, 247, 255), HB_RGB(245, 252, 255),
 };
+// The waveform: 90 rows, mirrored about its middle. Its three pages are taken together as ui.c has them (s_wave),
+// drawn into s_wpx a band a pass, then sent from the middle out, a row and its mirror a pass: the two halves of
+// a column change within a fraction of a millisecond (sent top to bottom, the panel showed the top half of the
+// new picture over the bottom half of the old one for ~30 ms).
+#define WAVE_Y (HB_TOP + 66)
+#define WAVE_H 90u
+static uint8_t  s_wave[3][128];
+static uint16_t s_wpx[SCALE_W * WAVE_H];
+static uint8_t  s_wState;                         // 0 idle, 1..3 band (s_wState - 1) to draw, 4 sending
+static uint8_t  s_wPair;                          // the next row pair to send: rows 44 - p and 45 + p
 static void putWave(uint8_t page, int32_t y0)
 {
+    (void)y0;
     const uint8_t h = 30;
-    const uint8_t* src = s_oled[page];
+    const uint8_t* src = s_wave[page - 4];
+    uint16_t* const out = s_wpx + (uint32_t)(page - 4) * h * SCALE_W;
     for (uint8_t y = 0; y < h; y++) {
         const uint8_t bit = (uint8_t)(y * 8 / h);
         const int32_t r2 = 2 * ((page - 4) * 8 + bit) - 23;                    // twice the distance from the middle
@@ -350,7 +382,7 @@ static void putWave(uint8_t page, int32_t y0)
         const uint16_t on = be(kWave[lvl > 11 ? 11 : lvl]);
         const uint16_t c = kWave[lvl > 11 ? 11 : lvl];
         const uint16_t dim = be((uint16_t)((c >> 1) & 0x7BEF));                // half bright: behind the playhead
-        uint16_t* d = s_px + y * SCALE_W;
+        uint16_t* d = out + y * SCALE_W;
         for (uint16_t x = 0; x < SCALE_W; x++) {
             const uint8_t sx = kSrcX[x];
             if (sx == WAVE_X) { d[x] = be(HB_RGB(255, 255, 255)); continue; }   // the playhead
@@ -359,7 +391,20 @@ static void putWave(uint8_t page, int32_t y0)
             d[x] = b >> bit & 1 ? (sx < WAVE_X ? dim : on) : 0;
         }
     }
-    H->blit(0, y0, SCALE_W, h, s_px);
+}
+static int waveStep(void)                          // 1: it used the pass (drew a band or sent a pair)
+{
+    if (s_wState == 0) {
+        if (s_layout != 0 || !(s_dirty & 0x70) || !lcdFree()) return 0;
+        for (uint8_t b = 0; b < 3; b++) for (uint8_t x = 0; x < 128; x++) s_wave[b][x] = s_oled[4 + b][x];
+        s_dirty &= (uint8_t)~0x70u; s_wState = 1;
+    }
+    if (s_wState <= 3) { putWave((uint8_t)(4 + s_wState - 1), 0); s_wState++; s_wPair = 0; return 1; }
+    const uint32_t a = WAVE_H / 2 - 1 - s_wPair, b = WAVE_H / 2 + s_wPair;
+    H->blit(0, WAVE_Y + (int32_t)a, SCALE_W, 1, s_wpx + a * SCALE_W);
+    H->blit(0, WAVE_Y + (int32_t)b, SCALE_W, 1, s_wpx + b * SCALE_W);
+    if (++s_wPair >= WAVE_H / 2) s_wState = 0;
+    return 1;
 }
 
 // the overview, from the track's 128 columns of 0..15
@@ -386,14 +431,14 @@ static void putOverview(int32_t y0)
         }
     if (frames >= 240 && head < SCALE_W)
         for (uint8_t y = 0; y < h; y++) s_px[y * SCALE_W + head] = s_px[y * SCALE_W + (head + 1 < SCALE_W ? head + 1 : head)] = be(HB_RGB(255, 255, 255));
-    H->blit(0, y0, SCALE_W, h, s_px);
+    blit(y0, h);
 }
 
 static void putPage(uint8_t page)
 {
-    if (s_layout == 1) { putText(page, HB_TOP + 2 + page * 25, 25); return; }
+    if (s_layout == 1) { putText(page, HB_TOP + 2 + page * 25, 25); return; }   // (all 8 from s_oled)
     if (page < 4) putText(page, HB_TOP + 2 + page * 15, 15);
-    else if (page < 7) putWave(page, HB_TOP + 66 + (page - 4) * 30);
+    else if (page < 7) {}                         // (waveStep())
     else putOverview(HB_TOP + 162);
 }
 static void layout(void)                          // the deck or the list: all of it again when it changes
@@ -401,8 +446,9 @@ static void layout(void)                          // the deck or the list: all o
     const uint8_t l = g_app.browsing ? 1 : 0;
     if (l == s_layout) return;
     s_layout = l;
+    s_sendRow = s_sendH;                          // (a band half sent: dropped, all is drawn again)
     H->fill(0, HB_TOP, 240, 240 - HB_TOP, 0);
-    s_dirty = 0xFF;
+    s_dirty = 0xFF; s_wState = 0;
 }
 
 // ---- audio: blocks into the ring here; render() takes them at half its rate
@@ -477,6 +523,9 @@ static void work(uint32_t full)
         statAt = H->ms();
         H->midi_send(0xBF, 109, passes & 0x7F); H->midi_send(0xBF, 110, passes >> 7 & 0x7F);
         H->midi_send(0xBF, 111, s_miss > 127 ? 127 : s_miss);
+        const uint32_t w = s_maxWork / 2400u, q = s_maxPut / 2400u;   // the longest pass, and page, in 0.1 ms
+        H->midi_send(0xBF, 114, w > 127 ? 127 : w); H->midi_send(0xBF, 115, q > 127 ? 127 : q);
+        s_maxWork = s_maxPut = 0;
         passes = 0; s_miss = 0;                   // (misses: this last second)
     }
 #endif
@@ -487,8 +536,18 @@ static void work(uint32_t full)
 #else
     const uint8_t perPass = 2;
 #endif
-    for (uint8_t k = 0, put = 0; k < UI_PAGES && put < perPass; k++)    // a page is ~5 ms at 12 MHz
-        if (s_dirty & (1u << k)) { s_dirty &= (uint8_t)~(1u << k); putPage(k); put++; app_step(); }
+    const uint32_t t = H->ticks();
+    if (!waveStep())                              // the waveform first, whole; the other pages between
+        for (uint8_t k = 0, put = 0; k < UI_PAGES && put < perPass && lcdFree(); k++) {   // (the panel busy: next pass)
+            if (s_layout == 0 && k >= 4 && k <= 6) continue;
+            if (!(s_dirty & (1u << k))) continue;
+            s_dirty &= (uint8_t)~(1u << k);
+            putPage(k); put++;                    // (drawn into s_px; pump() sends it)
+            app_step();
+        }
+    pump();
+    const uint32_t d = H->ticks() - t;
+    if (d > s_maxPut) s_maxPut = d;
     lights();
     static uint32_t logged, logAt;                // the ring running dry, in the host's log (tools/dock.py log)
     if (s_under != logged && H->ms() - logAt > 1000) { logged = s_under; logAt = H->ms(); H->log_u32("freedj: dry samples ", logged); }
@@ -496,14 +555,17 @@ static void work(uint32_t full)
 
 // The top line is the deck's (HB_F_SCREEN): its name and the CPU meter, the share of the time the deck's
 // main-loop work takes (decoding, keylock, the screen; fm1-dock's own "%" there would count only the
-// audio interrupt, ~0.4 % here), measured on the 24 MHz counter, every half second.
+// audio interrupt, ~0.4 % here), measured on the 24 MHz counter, every second.
 #if FM1_HOST
-#define DECK_NAME "FREEDJ USB"
+#define DECK_NAME "FREEDJ NANO"
 #else
-#define DECK_NAME "FREEDJ"
+#define DECK_NAME "FREEDJ NANO"
 #endif
-static uint32_t s_busy, s_meterAt, s_cpu = 0xFF;
-static void header(void)
+static uint32_t s_busy, s_meterAt, s_cpu = 0xFF, s_hdr;
+// The CPU figure alone, on a canvas off screen (60 x 17, ~1.4 ms to the panel): clearing the line and writing it
+// again on the panel showed it blank between (a flicker), and the whole line took ~8 ms, holding up the main loop.
+#define CPU_W 60
+static void cpuText(void)
 {
     char t[12] = "CPU ";
     uint32_t i = 4, v = s_cpu > 999 ? 999 : s_cpu;
@@ -512,31 +574,39 @@ static void header(void)
     t[i++] = '%'; t[i] = 0;
     const uint16_t c = s_cpu == 0xFF ? HB_RGB(120, 120, 120) : s_cpu >= 80 ? HB_RGB(255, 70, 50)
                      : s_cpu >= 50 ? HB_RGB(255, 210, 0) : HB_RGB(80, 220, 110);
+    H->cv_begin(CPU_W, 17, 0);
+    H->cv_text(CPU_W - 4 - H->text_w(0, t), 0, 0, t, c);   // right-aligned, 4 px in from the edge
+    H->cv_blit(240 - CPU_W, 2);
+}
+static void header(void)                          // all of the line: on a full redraw only
+{
     H->fill(0, 0, 240, HB_TOP - 1, 0);
     H->text(4, 2, 140, 0, DECK_NAME, HB_RGB(170, 140, 255), 0);
-    const int32_t x = 236 - H->text_w(0, t);
-    H->text(x, 2, 240 - x, 0, t, c, 0);           // (the box must stay on the screen)
     H->fill(0, HB_TOP - 2, 240, 1, HB_RGB(90, 90, 90));
+    cpuText();
 }
 static void meter(void)
 {
     const uint32_t now = H->ticks(), span = now - s_meterAt;
-    if (span < 12000000u) return;                 // half a second
+    if (span < 24000000u) return;                 // a second
     const uint32_t pct = s_busy / (span / 100u);
     s_busy = 0; s_meterAt = now;
 #if FM1_HOST
     if (s_started) H->midi_send(0xBF, 113, pct > 127 ? 127 : pct);
 #endif
-    if (pct == s_cpu) return;
+    if (s_cpu != 0xFF && pct + 1 >= s_cpu && pct <= s_cpu + 1) return;   // +-1: as shown (else it flips at idle)
     s_cpu = pct;
-    header();
+    s_hdr = 1;
 }
 static void draw(uint32_t full)
 {
     const uint32_t t0 = H->ticks();
     work(full);
     if (full) header();                           // (after work(): a full redraw clears the screen first)
-    s_busy += H->ticks() - t0;
+    else if (s_hdr && lcdFree() && !s_wState) { s_hdr = 0; cpuText(); }   // (its text would wait for a band going)
+    const uint32_t d = H->ticks() - t0;
+    s_busy += d;
+    if (d > s_maxWork) s_maxWork = d;
     meter();
 }
 

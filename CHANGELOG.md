@@ -2,6 +2,30 @@
 
 Newest first. Each entry lists what changed, then the budget measured at that point.
 
+## 2026-11-25 (later): ch32v003, the deck on a real FM-1
+
+- Installed on a real M-VAVE FM-1 (stock FM-1_015 replaced by fm1-dock 0.9.0 Standard, the checksum
+  checked). Both builds run; keylock works on the chip. Under fm1-dock its USB-MIDI port is named
+  "Felucca": `tools/fm1host.py` now finds fm1-live's or a real FM-1's by itself.
+- Glitches over USB on the chip: fm1-dock's `blit()` waits for the 12 MHz panel (~10 ms a waveform band),
+  and its USB interrupt holds one incoming frame, dropping the next if the main loop hasn't come by
+  (~1 ms of filler later). Now: the waveform at 10 fps (`WAVE_DIV=2`), drawn whole into a buffer of its
+  own and sent a row pair a pass from its middle out (the halves change together; ~0.6 ms a pass), the
+  other pages in 2-row strips, the CPU figure on a small off-screen canvas once a second (±1 ignored:
+  no flicker). The host keeps 4 frames in flight (fm1-dock's queue) with 48 events of filler on an
+  FM-1 (16 and 32 in fm1-live). Longest main-loop pass 0.5 ms idle; no glitches heard.
+- The waveform's play position is taken once a frame (`fw/ui.c`): the bottom beat ticks were a column
+  behind the top ones.
+- The track list stays open once FX + SELECT opens it: SELECT moves, its push (or EDIT) loads, FX
+  tapped closes (`fw/app.c`, all chips). The title is FREEDJ NANO; the module reports its longest
+  main-loop pass to the host (CC 114 / 115).
+- `fm1/usbhost.c`: an fm1-dock probe for USB host mode (from JieLi's AC79 SDK driver, read from its
+  bitcode). On the FM-1 the controller takes the host role (DEVCTL 0x0F), but VBUS never reads valid
+  and no device was seen through hubbed adapters (an Apple multiport, a dock): their hubs wait for
+  5 V from the host. Next: a passive OTG adapter with a charging input, the stick on 5 V directly.
+- Seen twice: a crash right after deploying a build over an older one at the same flash address
+  (fm1-dock's instruction cache, likely); it restarts and runs. Stop the host before deploying.
+
 ## 2026-11-25: ch32v003, the deck on an M-VAVE FM-1 (fm1-dock module, fm1-emu), tracks over USB
 
 - `make fm1`: the same `fw/` as an fm1-dock module (`fm1/hal_fm1.c`) for the FM-1 pocket synth

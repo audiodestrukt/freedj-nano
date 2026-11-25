@@ -144,7 +144,9 @@ static void wave(uint8_t band)
     if (!g_app.peaksOff) return;
     uint8_t* px = s_buf + 1;
     const uint32_t len = (g_app.frames + TRK_PEAK - 1) / TRK_PEAK;
-    const int32_t c0 = (int32_t)(pos() / TRK_PEAK) - WAVE_X;          // the first column's peak
+    static int32_t s_c0;                                      // the first column's peak: taken with the top band and
+    if (band == 0) s_c0 = (int32_t)(pos() / TRK_PEAK) - WAVE_X;   //  kept for the other two (drawn a few ms later, they'd
+    const int32_t c0 = s_c0;                                  //  be a column on at times: the beat ticks out of line)
     uint8_t skip = 0, n = 128;
     if (c0 < 0) skip = (uint8_t)(-c0 > 128 ? 128 : -c0);
     if (c0 + 128 > (int32_t)len) n = (uint8_t)((int32_t)len - c0 < 0 ? 0 : (int32_t)len - c0);

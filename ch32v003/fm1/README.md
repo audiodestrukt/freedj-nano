@@ -7,10 +7,10 @@ community base firmware that keeps the FM-1's USB, installer and rescue, and run
 at a time; `hal_fm1.c` is this deck's `hal.h` on fm1-dock's module interface
 (`firmware/dock/hb_module.h`).
 
-Status (2026-11-25): runs in fm1-emu, plays, jogs, browses, loads. Two builds: `make fm1` with a short
-clip in the module's flash, and `make fm1-usb` with the tracks streamed from the computer over USB
-(`tools/fm1host.py`, below): four full tracks play with no missed blocks in fm1-emu. Not tried on a real
-FM-1 yet.
+Status (2026-11-25): runs on a real FM-1 (fm1-dock 0.9.0) and in fm1-emu: plays, jogs, browses, loads,
+keylock. Two builds: `make fm1` with a short clip in the module's flash, and `make fm1-usb` with the
+tracks streamed from the computer over USB (`tools/fm1host.py`, below), playing without glitches on the
+FM-1.
 
 ![The deck in fm1-emu](../../docs/media/fm1-deck.png)
 
@@ -19,8 +19,8 @@ FM-1 yet.
 | FM-1 | The deck |
 |---|---|
 | SELECT | the jog (nudge while playing, scrub while paused) |
-| FX + SELECT | the track list |
-| EDIT | the encoder's push: keylock; loads in the list; FX + EDIT: tempo range |
+| FX + SELECT | opens the track list; then SELECT moves, its push loads, FX tapped closes it |
+| EDIT, SELECT's push | the encoder's push: keylock; loads in the list; FX + EDIT: tempo range |
 | KNOB1 | tempo (the pitch pot) |
 | SEQ | CUE (left of PLAY, as on a CDJ) |
 | PLAY | PLAY |
@@ -33,6 +33,10 @@ PLAY lights while playing, SEQ while previewing the cue. In fm1-live's window: S
 
 ## How it maps
 
+- **The panel's speed:** fm1-dock's `blit()` waits for the 12 MHz SPI (a waveform band ~10 ms) and the
+  main loop is also where the USB frames are taken, so the waveform goes at 10 fps (USB build), drawn
+  whole and sent a row pair a pass from its middle out (its two halves change together; there's no
+  vsync), the other pages in 2-row strips: no pass over ~1 ms.
 - **Screen:** `fw/ui.c` still talks to an SSD1306. `hal_i2c_send` keeps its 128 x 64 picture and
   each page that changed is laid out on the colour panel: the text pages scaled to 240 x 15, the
   waveform's three at 30 px each coloured by loudness (deep blue to white) and dimmed behind the
@@ -61,9 +65,11 @@ the FREEDJ USB module over fm1-dock's USB-MIDI (`make fm1-usb-live` builds the i
   entries) are pinned. The track data comes into a 128 KB cache, 120 blocks (2.8 s) ahead of the
   deck; the waveform's peaks into a 32 KB cache of their own. A paused deck's position is fetched
   too, so PLAY starts with audio. A block not there plays silence.
-- Each frame is half a block with its block number, followed by 32 events of filler (fm1-dock holds
-  one frame at a time and drops one that starts arriving too soon). Up to 16 frames are in flight;
-  nothing is resent by the computer: the module sees gaps in what came and asks again.
+- Each frame is half a block with its block number, followed by filler (fm1-dock's USB interrupt holds
+  one frame until its main loop takes it, and drops one that starts arriving meanwhile): 48 events and
+  4 frames in flight on an FM-1 (its queue), 32 and 16 in fm1-live. Nothing is resent by the computer:
+  the module sees gaps in what came and asks again. Under fm1-dock a real FM-1's port is "Felucca";
+  the host finds it (or fm1-live's) by itself.
 - Rates: the deck plays 43 blocks a second (22 KB/s). fm1-dock's USB driver takes about one
   64-byte packet every half millisecond on the chip (one a millisecond in fm1-emu), ~2x what the
   deck needs with pipelining; more would need fm1-dock itself changed (its CDC channel, or polling
@@ -72,6 +78,21 @@ the FREEDJ USB module over fm1-dock's USB-MIDI (`make fm1-usb-live` builds the i
   fm1-emu, crates/fm1-soc/src/usb.rs, not upstream) lets it send more, as a computer does.
 
 ## A USB stick (next)
+
+Tried 2026-11-25 with `usbhost.c`, an fm1-dock probe (runs from RAM, never touches the flash): a countdown,
+then the controller in host mode as JieLi's AC79 SDK driver does it, a watch for a device, its descriptor,
+then the watchdog restarts the FM-1 and `tools/probe.py result` reads what it saw:
+
+```
+cd ~/sandbox/thirdparty/fm1-dock && uv run --with python-rtmidi tools/probe.py run \
+  ~/sandbox/audiodestrukt/freedj-nano/ch32v003/fm1/usbhost.c --on fm1 --args 20,20 --ms 90000
+```
+
+The controller takes the host role (DEVCTL 0x0F: session, host mode), but through an Apple USB-C
+multiport adapter and a USB-C dock, both with a charger in, no device came up (D+ / D- low) and VBUS never
+read valid: their hubs wait for 5 V from the host, which the FM-1 can't give. Next: a passive OTG adapter
+with a charging input (no hub), or a Y-lead (the stick on 5 V, D+ / D- straight through).
+
 
 The FM-1's USB controller (a Mentor MUSB core) can be a host, and JieLi's AC79 SDK has host and
 mass-storage code. Untested: whether host mode works through the FM-1's USB-C port, and the stick's
@@ -108,7 +129,7 @@ The variables (`FM1_DOCK`, `FM1_LIVE`, `FM1_FWSC`, `JIELI_TOOLCHAIN`) default to
 deploy script as a file (`FM1_BENCH_KEYS=@file`) rather than in the environment, where 196 KB
 doesn't fit: a five-line change in the local clone, not yet upstream.
 
-## On a real FM-1 (untried)
+## On a real FM-1
 
 Install fm1-dock (its web installer, or `tools/fm1_install.py` with its package), then over USB:
 
@@ -117,11 +138,13 @@ cd ~/sandbox/thirdparty/fm1-dock && uv run --with python-rtmidi tools/dock.py de
   ~/sandbox/audiodestrukt/freedj-nano/ch32v003/build/fm1/freedj.dock
 ```
 
-Over USB that takes seconds. Holding OCT- at power-on always reaches fm1-dock's rescue.
+Over USB that takes seconds. Holding OCT- at power-on always reaches fm1-dock's rescue. Stop
+`tools/fm1host.py` before deploying; a build deployed over an older one at the same flash address has
+crashed once right after starting (it restarts and runs).
 
 ## Still to do
 
-- The USB stick probe (above).
+- The USB stick: the probe through a passive, powered OTG adapter (above); then mass storage and FAT.
 - Browsing on its own encoder (PRESETS), no FX to hold.
 - The 27 keys: hot cues, loops.
 - A layout of its own at 240 x 240 instead of the OLED's pages laid out.
