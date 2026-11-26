@@ -40,23 +40,46 @@ budget, the audio out and in, the storage, the screen, the controls and the netw
 shared C modules with that chip's own compiler and picks what the chip can run:
 
 ```
-python3 tools/target.py new mychip --cc arm-none-eabi-gcc --cflags='-mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16'
+python3 tools/target.py new mychip --cc arm-none-eabi-gcc --svd vendor/mychip.svd --ld vendor/mychip.ld
+python3 tools/target.py detect mychip   # what the chip has, and where each fact came from
 python3 tools/target.py plan mychip     # after filling in the board's part of targets/mychip.toml
 make targets                            # every target: probe and plan
 make targetcheck                        # every plan against the [expect] in its file
 ```
 
-- `new` reads the compiler's macros for the ISA. It also compiles a few test functions to see which
-  operations are hardware and which call the runtime (32- and 64-bit multiply and divide, float, double).
+- `detect` gathers what the chip has from four sources, each value tagged with where it came from:
+  - **The compiler.** Its macros give the ISA, FMA, DSP/SIMD, vector, atomics and bit-manipulation
+    extensions. A few test functions show what the flags make hardware: FPU (single, double), 32- and 64-bit
+    multiply and divide.
+  - **The SVD** (`[sources] svd`, a path or a URL fetched once). It gives the CPU block (FPU, DSP, MPU, caches),
+    the cores, DMA and its channel count, I2C, SPI, I2S, USB, Ethernet, SDIO, PIO, QSPI (PSRAM where the
+    controller maps one), external memory buses, display engines, 2D GPUs, DSP blocks and radios.
+  - **The linker script** (`[sources] ld`) gives flash, RAM, PSRAM and TCM.
+  - **The target file's `[chip]`** gives what no file says: the clock, PSRAM on the board, radios on a chip
+    without an SVD (the FM-1). It overrides the rest.
+- `new` writes a starting file. Given an SVD and no `--cflags`, it takes the CPU's flags (`-mcpu`,
+  `-mfloat-abi`, `-mfpu`) from it.
 - `probe` compiles every module (and the port's HAL, under `[hal]`) and reports code, data, bss, and each
   module's state as `sizeof` on the target's ABI. It also lists the runtime helpers each module calls and
   flags any the target's runtime lacks (`missing`: the FM-1 has no 64-bit division and no `double`).
 - `plan` chooses the engine (lite, or hifi with stereo 16-bit out and memory-mapped tracks) and the
   features (DVS needs stereo audio in, Pro DJ Link a network). It drops features until the budget holds
-  and gives the reason for each one left out. It lists the `hal.h` functions still to write and writes
-  `build/targets/<name>/config.h` (`FEAT_*`) and `target.mk` (the sources).
+  and gives the reason for each one left out. It lists the `hal.h` functions still to write.
+  - It derives the build flags:
+    - the optimisation level from the flash use;
+    - `-ffp-contract=off` with an FPU, so floats match the host tests;
+    - section garbage collection;
+    - `HAL_AUDIO_BLOCKS` from the spare RAM;
+    - `UN_MTU=576` on small RAM;
+    - `WAVE_DIV` for a colour screen;
+    - `TARGET_FPU`, `TARGET_CORES`, `TARGET_MHZ`, `TARGET_DMA` and `TARGET_PSRAM_KB`.
+  - It notes what to act on: an FPU or DSP the flags don't use, no DMA, a second core, PSRAM, a radio or
+    Ethernet with no network configured, USB that can be a host, a display engine.
+  - It writes `build/targets/<name>/config.h` (`FEAT_*`, `TARGET_*`) and `target.mk` (sources and flags).
+  - It estimates lite's CPU load from deckbench's measured cycles a sample on RV32EC and the M0+.
 
-Sizes are per object before linking, an upper bound. The CPU isn't checked: `make deckbench` measures that.
+Sizes are per object before linking, an upper bound. Other ISAs and hifi's CPU load aren't estimated:
+`make deckbench` measures that.
 
 The same firmware builds for Puya's PY32F030x8 (Cortex-M0+, 48 MHz, 64 KB flash, 8 KB RAM).
 On deckbench it's 35 % of the CPU against the CH32V003's 39 %, and with the RAM for an 8-block

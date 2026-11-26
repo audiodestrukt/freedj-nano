@@ -8,6 +8,13 @@ cflags = "-mcpu=cortex-m0plus -mthumb -Os"
 mhz = 48
 missing = []
 
+[chip]
+cores = 1
+
+[sources]
+svd = "$PY32_SDK/Misc/SVD/py32f030xx.svd"
+ld = "py32/py32f030x8.ld"
+
 [memory]
 flash_kb = 64
 ram_kb = 8

@@ -9,6 +9,15 @@ cflags = "-march=rv32imac_zicsr -mabi=ilp32 -Os"
 mhz = 160
 missing = []
 
+# what the SVD can't say: one HP core (the LP core runs nothing of ours), no PSRAM interface, the radios
+[chip]
+cores = 1
+psram_kb = 0
+radio = ["wifi6", "ble5", "802.15.4"]
+
+[sources]
+svd = "https://raw.githubusercontent.com/espressif/svd/main/svd/esp32c6.svd"
+
 [memory]
 flash_kb = 1024        # the app partition
 ram_kb = 320           # what ESP-IDF and Wi-Fi leave

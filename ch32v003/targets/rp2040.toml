@@ -10,6 +10,13 @@ mhz = 133
 # (in software here: div32, mul64, div64, float, double)
 missing = []
 
+[chip]
+cores = 2
+
+[sources]
+svd = "$PICO_SDK_PATH/src/rp2040/hardware_regs/RP2040.svd"
+ld = "$PICO_SDK_PATH/src/rp2_common/pico_crt0/rp2040/memmap_default.ld"
+
 [memory]
 flash_kb = 256         # code; the rest of the 2 MB is tracks, read in place (XIP)
 ram_kb = 264

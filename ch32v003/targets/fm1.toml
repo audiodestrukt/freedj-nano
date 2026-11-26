@@ -10,6 +10,14 @@ mhz = 0                # (not measured; the timecode decoder is 2.3 % of a core 
 missing = ["__udivdi3", "__divdi3", "__umoddi3", "__moddi3", "__adddf3", "__subdf3", "__muldf3", "__divdf3",
            "__extendsfdf2", "__truncdfsf2", "__floatsidf", "__fixdfsi"]
 
+# JieLi publishes no SVD: from HARDWARE.md (two pi32v2 cores, the second idle unless a module hands it work;
+# ALNK the audio link; a USB OTG port; Wi-Fi and BLE in the SDK)
+[chip]
+cores = 2
+i2s = ["ALNK0"]
+usb = ["USB0 (OTG)"]
+radio = ["wifi", "ble"]
+
 [memory]
 flash_kb = 272         # a module image is at most 272 KiB (and the tracks' clip comes out of it)
 ram_kb = 272           # module RAM, .data + .bss

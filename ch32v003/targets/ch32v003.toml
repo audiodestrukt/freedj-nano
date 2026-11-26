@@ -9,6 +9,13 @@ mhz = 48
 # the runtime helpers the build has (bench/rt.c and libgcc: every one)
 missing = []
 
+[chip]
+cores = 1
+
+# WCH's SVD (ch32fun's copy, fetched once into build/targets/svd/): DMA1 (7 channels), I2C1, SPI1, no I2S
+[sources]
+svd = "https://raw.githubusercontent.com/cnlohr/ch32fun/master/misc/CH32V003xx.svd"
+
 [memory]
 flash_kb = 16
 ram_kb = 2
