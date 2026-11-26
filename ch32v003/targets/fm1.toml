@@ -1,0 +1,48 @@
+# M-VAVE FM-1 as an fm1-dock module (fm1/): HARDWARE.md has the measurements behind these
+name = "fm1"
+desc = "M-VAVE FM-1 (JieLi AC791N, 2 x pi32v2 with an FPU), an fm1-dock module"
+
+[cpu]
+cc = "$JIELI_TOOLCHAIN/pi32v2/bin/clang -target pi32v2"
+cflags = "-O2 -mcpu=r3 -mfprev1 -ffp-contract=off -fno-builtin -isystem $JIELI_TOOLCHAIN/pi32v2/include"
+mhz = 0                # (not measured; the timecode decoder is 2.3 % of a core at 48 kHz)
+# fm1-dock RULES.md: no double, no 64-bit division
+missing = ["__udivdi3", "__divdi3", "__umoddi3", "__moddi3", "__adddf3", "__subdf3", "__muldf3", "__divdf3",
+           "__extendsfdf2", "__truncdfsf2", "__floatsidf", "__fixdfsi"]
+
+[memory]
+flash_kb = 272         # a module image is at most 272 KiB (and the tracks' clip comes out of it)
+ram_kb = 272           # module RAM, .data + .bss
+stack_b = 4096
+
+# the port's own code, compiled and measured with the rest (its RAM: the 64-block ring, the screen, USB)
+[hal]
+sources = ["fm1/hal_fm1.c", "fm1/usbmsc.c"]
+includes = ["$FM1_DOCK/firmware/dock", "$FM1_DOCK/modules/lib", "fm1"]
+defines = ["HAL_AUDIO_BLOCKS=64", "FM1_STICK=1"]
+
+[audio]
+out = "dac"
+out_bits = 16
+out_channels = 2
+in = "usb-audio"       # a UCA202 on the FM-1's USB host port (DVS)
+in_channels = 2
+
+[storage]
+kinds = ["memcard", "usb-msc", "usb-host-pc"]
+
+[display]
+kind = "color-tft"
+
+[input]
+kinds = ["ec11", "buttons", "pot", "usb-midi"]
+
+[net]
+kind = "none"          # Wi-Fi in the SDK, not reachable from a module yet (fm1-wifi notes)
+
+# what the plan should be (target.py check)
+[expect]
+engine = "lite"
+upgrade = "hifi"
+build = ["app", "lite", "memcard", "dvs"]
+fits = true

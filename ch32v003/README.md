@@ -33,6 +33,31 @@ make deckbench CHIP=py32  # Thumb under qemu-arm -cpu cortex-m0 (the Arm GNU too
 
 ### The PY32F030 instead
 
+## A new chip: `tools/target.py`
+
+A target is a capability file, `targets/<name>.toml`. It gives the compiler and its flags, the flash and RAM
+budget, the audio out and in, the storage, the screen, the controls and the network. The tool measures the
+shared C modules with that chip's own compiler and picks what the chip can run:
+
+```
+python3 tools/target.py new mychip --cc arm-none-eabi-gcc --cflags='-mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16'
+python3 tools/target.py plan mychip     # after filling in the board's part of targets/mychip.toml
+make targets                            # every target: probe and plan
+make targetcheck                        # every plan against the [expect] in its file
+```
+
+- `new` reads the compiler's macros for the ISA. It also compiles a few test functions to see which
+  operations are hardware and which call the runtime (32- and 64-bit multiply and divide, float, double).
+- `probe` compiles every module (and the port's HAL, under `[hal]`) and reports code, data, bss, and each
+  module's state as `sizeof` on the target's ABI. It also lists the runtime helpers each module calls and
+  flags any the target's runtime lacks (`missing`: the FM-1 has no 64-bit division and no `double`).
+- `plan` chooses the engine (lite, or hifi with stereo 16-bit out and memory-mapped tracks) and the
+  features (DVS needs stereo audio in, Pro DJ Link a network). It drops features until the budget holds
+  and gives the reason for each one left out. It lists the `hal.h` functions still to write and writes
+  `build/targets/<name>/config.h` (`FEAT_*`) and `target.mk` (the sources).
+
+Sizes are per object before linking, an upper bound. The CPU isn't checked: `make deckbench` measures that.
+
 The same firmware builds for Puya's PY32F030x8 (Cortex-M0+, 48 MHz, 64 KB flash, 8 KB RAM).
 On deckbench it's 35 % of the CPU against the CH32V003's 39 %, and with the RAM for an 8-block
 audio ring its worst step is 51 % of the cushion instead of 135 %. The comparison:

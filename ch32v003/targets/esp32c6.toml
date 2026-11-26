@@ -1,0 +1,41 @@
+# ESP32-C6 (firmware/, the C++ engine today). The compiler is a stand-in: xPack's RISC-V GCC for rv32imac,
+# the C6's ISA; ESP-IDF's riscv32-esp-elf-gcc is in its Docker image (CC_ESP32C6= to use it).
+name = "esp32c6"
+desc = "Espressif ESP32-C6, RV32IMAC 160 MHz, 512 KB SRAM, Wi-Fi 6"
+
+[cpu]
+cc = "${CC_ESP32C6:-$XPACK_RISCV/bin/riscv-none-elf-gcc}"
+cflags = "-march=rv32imac_zicsr -mabi=ilp32 -Os"
+mhz = 160
+missing = []
+
+[memory]
+flash_kb = 1024        # the app partition
+ram_kb = 320           # what ESP-IDF and Wi-Fi leave
+stack_b = 8192
+hal_ram_b = 16384      # an estimate: the C6 firmware is ESP-IDF C++ (firmware/), not a hal.h port
+
+[audio]
+out = "i2s"
+out_bits = 16
+out_channels = 2
+in = "none"
+
+[storage]
+kinds = ["mmap", "sd-spi"]   # tracks memory-mapped from flash (the C6's library)
+
+[display]
+kind = "ssd1306"
+
+[input]
+kinds = ["ec11", "buttons", "pot", "uart-midi"]
+
+[net]
+kind = "ip"            # lwIP over Wi-Fi: prolink on sockets
+
+# what the plan should be (target.py check)
+[expect]
+engine = "lite"
+upgrade = "hifi"
+build = ["app", "lite", "prolink"]
+fits = true

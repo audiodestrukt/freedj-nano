@@ -1,0 +1,42 @@
+# WCH CH32V003: the smallest target (deckbench in qemu; no board firmware yet)
+name = "ch32v003"
+desc = "WCH CH32V003, RV32EC 48 MHz, 16 KB flash, 2 KB RAM"
+
+[cpu]
+cc = "$XPACK_RISCV/bin/riscv-none-elf-gcc"
+cflags = "-march=rv32ec_zicsr -mabi=ilp32e -Os"
+mhz = 48
+# the runtime helpers the build has (bench/rt.c and libgcc: every one)
+missing = []
+
+[memory]
+flash_kb = 16
+ram_kb = 2
+# no hal.h port yet: deckbench (docs/DECK10C-PERF.md) measured 2007 B in all, so what isn't the shared modules'
+# .data/.bss is ~610 B: the audio ring (4 x 32 x 2 B), the drivers' state and the stack
+stack_b = 300
+hal_ram_b = 310
+
+[audio]
+out = "pwm"
+out_bits = 10
+out_channels = 1
+in = "none"
+
+[storage]
+kinds = ["sd-spi"]
+
+[display]
+kind = "ssd1306"
+
+[input]
+kinds = ["ec11", "buttons", "pot", "uart-midi"]
+
+[net]
+kind = "none"
+
+# what the plan should be (target.py check)
+[expect]
+engine = "lite"
+build = ["app", "lite"]
+fits = true

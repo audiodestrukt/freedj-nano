@@ -9,6 +9,8 @@
 #   make prolinktest  Pro DJ Link (fw/prolink.c) on the computer, against a real XDJ-1000MK2's packets
 #   make prolinkdiff  every packet of freedj-3000's captures through fw/prolink.c and through freedj-3000's parser
 #   make prolinkbench fw/prolink.c as player 4 beside Deckbench's simulated players on the loopback (follow, SYNC, MASTER)
+#   make targets    each target (targets/*.toml) probed with its own compiler and planned: build/targets/<name>/
+#   make targetcheck  the plans against what each target expects (tools/target.py; new chips: target.py new)
 #   make deckbench  the whole firmware for RV32EC in qemu: flash, RAM, stack, CPU by part, worst main-loop step
 #   CHIP=py32       sim and deckbench for the PY32F030 instead (Cortex-M0+, 8 KB RAM: an 8-block audio ring)
 #   make py32       the firmware for the PY32F030 board (py32/), build/py32fw/deck.hex
@@ -62,6 +64,11 @@ prolinkdiff: prolinktest
 	  ./build/f3kdump/release/f3kdump $$f | grep -v '^other' > build/pl.rs.txt; \
 	  if cmp -s build/pl.c.txt build/pl.rs.txt; then echo "same: $$(wc -l < build/pl.c.txt) packets, $$(basename $$f)"; \
 	  else echo "DIFFER: $$(basename $$f)"; diff build/pl.c.txt build/pl.rs.txt | head; exit 1; fi; done
+
+targets:
+	python3 tools/target.py plan
+targetcheck:
+	python3 tools/target.py check
 
 vinyltest:
 	@mkdir -p build

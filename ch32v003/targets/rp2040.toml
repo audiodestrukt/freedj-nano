@@ -1,0 +1,42 @@
+# rp2040: written by target.py new (Arm v6M Thumb); the board's part is yours to fill in
+name = "rp2040"
+desc = "Raspberry Pi RP2040, 2 x Cortex-M0+ 133 MHz, 264 KB SRAM, 2 MB QSPI flash (an example: no port yet)"
+
+[cpu]
+cc = "$ARM_GCC"
+cflags = "-mcpu=cortex-m0plus -mthumb -O2"
+mhz = 133
+# runtime helpers the chip's runtime doesn't have (a link that would fail): the probe flags any module calling one
+# (in software here: div32, mul64, div64, float, double)
+missing = []
+
+[memory]
+flash_kb = 256         # code; the rest of the 2 MB is tracks, read in place (XIP)
+ram_kb = 264
+stack_b = 4096
+hal_ram_b = 8192       # an estimate: pico-sdk, the I2S PIO program's DMA buffers
+
+[audio]
+out = "i2s"            # a PIO program to a PCM5102A, as the C6 boards
+out_bits = 16
+out_channels = 2
+in = "none"            # or i2s, usb-audio (with in_channels = 2: DVS)
+
+[storage]
+kinds = ["mmap", "sd-spi"]   # tracks in the XIP flash: memory-mapped
+
+[display]
+kind = "ssd1306"
+
+[input]
+kinds = ["ec11", "buttons", "pot", "uart-midi"]
+
+[net]
+kind = "none"          # none, ip (sockets on an IP stack), ethernet-raw (frames: fw/udpnet.c)
+
+# what the plan should be (target.py check)
+[expect]
+engine = "lite"
+upgrade = "hifi"
+build = ["app", "lite"]
+fits = true

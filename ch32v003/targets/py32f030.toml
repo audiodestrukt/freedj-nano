@@ -1,0 +1,43 @@
+# Puya PY32F030x8: the bench board (py32/), the deck firmware runs on it
+name = "py32f030"
+desc = "Puya PY32F030x8, Cortex-M0+ 48 MHz, 64 KB flash, 8 KB RAM"
+
+[cpu]
+cc = "$ARM_GCC"
+cflags = "-mcpu=cortex-m0plus -mthumb -Os"
+mhz = 48
+missing = []
+
+[memory]
+flash_kb = 64
+ram_kb = 8
+stack_b = 512
+
+[hal]
+sources = ["py32/hal_py32.c", "py32/startup.c"]
+includes = ["$PY32_SDK/Libraries/CMSIS/Core/Include", "$PY32_SDK/Libraries/CMSIS/Device/PY32F0xx/Include"]
+defines = ["PY32F030x8", "HAL_AUDIO_BLOCKS=8"]
+
+[audio]
+out = "pwm"
+out_bits = 10
+out_channels = 1
+in = "none"
+
+[storage]
+kinds = ["sd-spi", "memcard"]
+
+[display]
+kind = "ssd1306"
+
+[input]
+kinds = ["ec11", "buttons", "pot", "uart-midi"]
+
+[net]
+kind = "none"
+
+# what the plan should be (target.py check)
+[expect]
+engine = "lite"
+build = ["app", "lite", "memcard"]
+fits = true
