@@ -5,6 +5,7 @@
 // own dhcp_server.py (no root, no tap). So the emulated Pioneer deck, running its own firmware, is the peer.
 //
 //   prolink_seg GROUP:PORT [seconds] [--ip 192.168.50.20] [--player 3] [--master-at S] [--play BPM] [--sync-at S]
+//   --auto: claim a free player number (4, 5, 6, 3, 2, 1) instead of --player's
 //   prolink_seg lo ...            the loopback instead, plain UDP sockets on the three ports, us at 127.0.0.1:
 //                                 beside Deckbench's simulated players (127.0.0.N; sim/prolink_bench.py)
 //
@@ -22,6 +23,8 @@
 #include <unistd.h>
 #include "prolink.h"
 #include "udpnet.h"
+#include "linksync.h"
+#include <math.h>
 
 static int s_sock, s_lo, s_port[3];
 static struct sockaddr_in s_group;
@@ -71,13 +74,14 @@ int main(int argc, char** argv)
     const int port = colon ? atoi(colon + 1) : 0;
     double seconds = 30, masterAt = -1, playBpm = 0, syncAt = -1;
     const char* ipArg = "192.168.50.20";
-    int player = 3;
+    int player = 3, autoNum = 0;
     for (int i = 2; i < argc; i++) {
         if (!strcmp(argv[i], "--ip") && i + 1 < argc) ipArg = argv[++i];
         else if (!strcmp(argv[i], "--player") && i + 1 < argc) player = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--master-at") && i + 1 < argc) masterAt = atof(argv[++i]);
         else if (!strcmp(argv[i], "--play") && i + 1 < argc) playBpm = atof(argv[++i]);
         else if (!strcmp(argv[i], "--sync-at") && i + 1 < argc) syncAt = atof(argv[++i]);
+        else if (!strcmp(argv[i], "--auto")) autoNum = 1;
         else seconds = atof(argv[i]);
     }
     s_lo = !strcmp(argv[1], "lo");
@@ -116,13 +120,14 @@ int main(int argc, char** argv)
     const uint8_t mac[6] = {0x02, 0xf1, 0x00, 0x00, 0x00, (uint8_t)player};   // (locally administered, "F1")
     un_begin(&s_net, mac, ip.s_addr, mask.s_addr, frameOut, udpIn, 0);
     pl_begin(&s_link, (uint8_t)player, "FM-1", linkOut, 0);
+    pl_claim(&s_link, autoNum);                   // (a set number is claimed too, and kept)
     if (!s_lo) un_announce(&s_net);
     if (s_lo) printf("on the loopback as player %d, %s\n", player, ipArg);
     else printf("on %s:%d as player %d, %s\n", group, port, player, ipArg);
     fflush(stdout);
 
     const uint32_t t0 = nowUs();
-    uint32_t lastPrint = t0, beatN = 0, nextBeatUs = t0 + 500000u;
+    uint32_t lastPrint = t0;
     pl_master was = {0};
     int asked = 0, synced = 0;
     for (;;) {
@@ -131,23 +136,39 @@ int main(int argc, char** argv)
         if (t >= seconds) break;
         if (masterAt >= 0 && !asked && t >= masterAt) { asked = 1; pl_request_master(&s_link, s_now); printf("%6.2f asking for tempo master\n", t); }
         if (syncAt >= 0 && !synced && t >= syncAt) { synced = 1; printf("%6.2f SYNC on\n", t); }
-        if (synced) {                              // SYNC: the master's tempo, our beats on its beats
+        if (playBpm > 0) {
+            // A deck: the playhead in beats, at the track's tempo x the speed (the fader, plus SYNC's nudge for a
+            // beat). It starts 0.37 beat off the beat, so SYNC has a phase to pull in (fw/linksync.c).
+            static double pos = 0.37;
+            static uint32_t lastUs, nudgeUntil, lastMasterBeat;
+            static float fader = 1.0f, speed = 1.0f;
+            static ls_sync ss;
+            if (!lastUs) lastUs = s_now;
+            pos += (double)(uint32_t)(s_now - lastUs) / 60e6 * playBpm * speed;
+            lastUs = s_now;
             pl_master sm;
-            if (pl_get_master(&s_link, s_now, &sm) && sm.bpm > 0 && sm.beatUs) {
-                playBpm = sm.bpm;
-                const uint32_t per = (uint32_t)(60e6 / sm.bpm);
-                uint32_t next = sm.beatUs;
-                while ((int32_t)(s_now - next) >= 0) next += per;
-                if ((int32_t)(next - nextBeatUs) > (int32_t)per / 2) beatN++;   // (the grid moved on: a beat went by)
-                nextBeatUs = next;
+            const int sync = synced && !pl_is_master(&s_link) && pl_get_master(&s_link, s_now, &sm) && sm.bpm > 0;
+            if (ls_sync_tick(&ss, sync, 0) && synced && !sync) { /* (no master to follow: run on at the fader) */ }
+            if (sync) {
+                fader = ls_tempo_match(sm.bpm, (float)playBpm, 0.16f);
+                if (sm.beating && sm.beatUs != lastMasterBeat) {            // a master beat: where are we in ours
+                    lastMasterBeat = sm.beatUs;
+                    const double at = pos - (double)(uint32_t)(s_now - sm.beatUs) / 60e6 * playBpm * speed;
+                    float o = 0;
+                    const float frac = (float)(at - floor(at));
+                    const int act = ls_sync_on_master_beat(&ss, frac, 0, 0, &o);
+                    if (act == LS_CORRECT) { speed = fader + o; nudgeUntil = s_now + (uint32_t)(60e6 / sm.bpm); }
+                    static int shownN;
+                    if (shownN++ < 12) printf("%6.2f SYNC: master beat, ours at %+.3f beat%s\n", t, ls_phase_err(frac, 0),
+                                              act == LS_CORRECT ? ", nudged" : "");
+                }
             }
-        }
-        if (playBpm > 0) {                         // a deck playing at playBpm: beats from 1, 4 to the bar
-            const uint32_t period = (uint32_t)(60e6 / playBpm);
-            while ((int32_t)(s_now - nextBeatUs) > 0) { nextBeatUs += period; beatN++; }
-            pl_ours o = {.loaded = 1, .playing = 1, .sync = (uint8_t)synced, .trackBpm = (float)playBpm, .pitch = 1.0f, .beat = beatN ? beatN : 1,
-                         .beatInBar = (uint8_t)(beatN ? (beatN - 1) % 4 + 1 : 1), .nextBeat = beatN + 1,
-                         .nextBeatUs = nextBeatUs, .nextBeatInBar = (uint8_t)(beatN % 4 + 1)};
+            if (!nudgeUntil || (int32_t)(s_now - nudgeUntil) >= 0) { nudgeUntil = 0; speed = fader; }
+            const uint32_t beat = (uint32_t)floor(pos) + 1;                 // (beats from 1: the one we're in)
+            const double rate = playBpm * speed / 60e6;                     // beats a microsecond
+            pl_ours o = {.loaded = 1, .playing = 1, .sync = (uint8_t)synced, .trackBpm = (float)playBpm, .pitch = fader,
+                         .beat = beat, .beatInBar = (uint8_t)((beat - 1) % 4 + 1), .nextBeat = beat + 1,
+                         .nextBeatUs = s_now + (uint32_t)((ceil(pos) - pos) / rate), .nextBeatInBar = (uint8_t)(beat % 4 + 1)};
             pl_publish(&s_link, &o);
         }
         const uint32_t wait = pl_tick(&s_link, s_now, s_net.ip, s_net.mask, s_net.mac);
@@ -178,7 +199,8 @@ int main(int argc, char** argv)
         while ((e = pl_event(&s_link, &arg)) != PL_EV_NONE) {
             static const char* names[] = {"", "new player", "we are tempo master (1 nobody had it, 2 handed over):", "handed master to player",
                                           "yielding master to player", "player agreed to yield:", "asking the master, player", "handoff timed out, master",
-                                          "sync control from player", "on air:"};
+                                          "sync control from player", "on air:", "claiming player", "ours: player",
+                                          "taken, trying another: player", "defending our number", "our number is taken, claiming again:"};
             printf("%6.2f %s %u\n", t, names[e], arg);
             if (e == PL_EV_PEER)
                 for (int i = 0; i < PL_MAX_PEERS; i++)

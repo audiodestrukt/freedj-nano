@@ -182,9 +182,13 @@ crashed once right after starting (it restarts and runs).
   USB Ethernet adapter. Tested without hardware: `make prolinktest` (210 checks, real XDJ-1000MK2 and
   freedj-3000 captures), `make prolinkdiff` (every packet of freedj-3000's captures read the same as by
   freedj-3000's own parser), `make prolinkbench` (player 4 beside Deckbench's players: follows, SYNCs within
-  0.05 beat, takes MASTER). Next, the FM-1's way onto a network: a CDC-ECM USB Ethernet adapter on the hub
-  (`udpnet` on its bulk endpoints), or the FM-1's own Wi-Fi (the SDK's closed driver: an RTOS shim, flash
-  and RAM to be measured). Not yet: player-number claiming, media answers (freedj-3000 has both).
+  0.05 beat, takes MASTER). Also from freedj-3000: the player number claimed as the players do (AUTO: 4, 5,
+  6, 3, 2, 1; defended once held), a CDJ-3000's announce (an XDJ's made CDJ-3000s say "older firmware"), and
+  `fw/linksync.c`, the deck's side of SYNC (the master's phase as a slewed free run that rides out late Wi-Fi
+  beats; half the phase error a beat, at most 3 %; a jog nudge held). Deckbench: claims 4, SYNCs from 0.37 beat
+  off to 0.01 (5/5). The three modules: ~8.3 KB of code on a Cortex-M0+, ~10 KB here. Next, the FM-1's way onto
+  a network: a CDC-ECM USB Ethernet adapter on the hub (`udpnet` on its bulk endpoints), or the FM-1's own Wi-Fi
+  (the SDK's closed driver: an RTOS shim, flash and RAM to be measured). Not yet: media answers.
 - **TODO: one FM-1 build.** FREEDJ (tracks in flash), FREEDJ USB (from the computer) and FREEDJ STICK (stick,
   DVS) into one module that picks at run time from what's there; the FM-1 has room for one deck build (flash:
   the built-in tracks alone are ~190 KB).

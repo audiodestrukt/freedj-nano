@@ -4,12 +4,13 @@
 """fw/prolink.c beside Deckbench's simulated players, as freedj-3000's tools/deckbench/suite.py tests OpenDeck.
 
 Deckbench (github.com/commit-collective/deckbench) runs players 2 and 3 on the loopback (127.0.0.2, .3; 2 playing
-at 126 BPM, tempo master). sim/prolink_seg runs beside them as player 4 at 127.0.0.1, playing at 120 BPM, SYNC at
-5 s, MASTER at 16 s. Every check reads the bench's own view of us, as another player sees us:
+at 126 BPM, tempo master). sim/prolink_seg runs beside them at 127.0.0.1, claims a number (AUTO), plays at 120 BPM,
+SYNC at 8 s, MASTER at 20 s. Every check reads the bench's own view of us, as another player sees us:
 
+  claim    AUTO hears players 2 and 3 and claims 4
   seen     the bench lists player 4 at 127.0.0.1, with its status
   follow   we follow player 2 as tempo master at 126.00 BPM (our own log)
-  sync     after SYNC we report 126 BPM, synced, our beats within 0.05 beat of the master's
+  sync     after SYNC (from 0.37 beat off) we report 126 BPM, synced, our beats within 0.05 beat of the master's
   master   after MASTER we are tempo master and player 2 has let go
 
     python3 sim/prolink_bench.py [--deckbench ~/sandbox/thirdparty/deckbench] [--keep DIR]
@@ -20,8 +21,10 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 ME, PLAYER, MASTER_TEMPO = "127.0.0.1", 4, 126.0
-SYNC_AT, MASTER_AT, END = 5.0, 16.0, 26.0
-LOOK_SYNC, LOOK_MASTER = 12.0, 22.0
+# The number claim takes ~5.7 s first. Our deck starts 0.37 beat off and SYNC (fw/linksync.c) closes at most
+# 3 % of a beat per master beat, as freedj-3000's: ~15 beats, so the phase is read 10 s after SYNC.
+SYNC_AT, MASTER_AT, END = 8.0, 20.0, 30.0
+LOOK_SYNC, LOOK_MASTER = 18.0, 26.0
 
 
 def beat_at(phase, t):
@@ -53,7 +56,7 @@ def main():
     with Bench(numbers=[2, 3], on=True, init={2: "play,master"}, shift=0) as bench:
         bench.post(f"api/deck/2/tempo/{MASTER_TEMPO:g}")
         log = open(work / "prolink_seg.log", "w")
-        seg = subprocess.Popen([a.seg, "lo", str(END), "--player", str(PLAYER), "--play", "120",
+        seg = subprocess.Popen([a.seg, "lo", str(END), "--auto", "--play", "120",
                                 "--sync-at", str(SYNC_AT), "--master-at", str(MASTER_AT)], stdout=log, stderr=subprocess.STDOUT)
         t0 = time.time()
         try:
@@ -77,6 +80,9 @@ def main():
         results.append(ok)
         print(f"{'PASS' if ok else 'FAIL':5s} {name:7s} {detail}", flush=True)
 
+    claimed = re.search(r"ours: player (\d+)", out)
+    check("claim", claimed is not None and int(claimed.group(1)) == PLAYER,
+          f"claimed player {claimed.group(1)}" if claimed else "never claimed a number")
     me = device(snaps.get("last"))
     check("seen", me is not None and bool(me.get("status")), f"player {PLAYER} at {ME}" if me else "the bench never saw us")
     m = re.search(r"master: player 2 @ ([0-9.]+) BPM, playing, beating", out)

@@ -65,7 +65,11 @@ enum {
     PL_EV_YIELDING, PL_EV_YIELDED,                // arg asked us for master, we yield / arg agreed to yield to us
     PL_EV_ASKING, PL_EV_TIMEOUT,                  // asking the master (arg) to hand over / the handoff timed out
     PL_EV_SYNC_CTL, PL_EV_ON_AIR,                 // arg sent sync control / our channel on (1) or off (0) air
+    PL_EV_CLAIMING, PL_EV_CLAIMED,                // claiming player number arg / it's ours
+    PL_EV_TAKEN, PL_EV_DEFENDING,                 // arg is taken, trying another / defending ours (arg) to a claimant
+    PL_EV_RECLAIM,                                // another device holds our number arg: claiming a new one (AUTO)
 };
+enum { PL_CLAIM_DEFENDED = 4 };
 
 typedef struct {
     uint8_t  player;
@@ -80,6 +84,11 @@ typedef struct {
     uint32_t wantSinceUs, lastAskUs, ourSyncN, largestSyncN;
     int8_t   remoteSync, faderStart;
     uint8_t  onAir;
+    // the player number claim (pl_claim): 0 held (pl_begin's way), else the stage being sent
+    uint8_t  claiming, autoNum, stage, count, tried[6], ntried, defended, reclaim, helloLeft;
+    uint32_t claimNextUs, watchUntilUs, ip;
+    uint32_t defendedAgainst[PL_CLAIM_DEFENDED], warned[PL_CLAIM_DEFENDED];
+    uint8_t  nDefended, nWarned;
     // pacing
     uint8_t  started, pending;
     uint32_t nextAnnounceUs, nextStatusUs, counter, lastBeatSent;
@@ -91,6 +100,13 @@ typedef struct {
 void pl_begin(pl* l, uint8_t player, const char* name, pl_send_fn send, void* ctx);
 // On Wi-Fi set l->beatsToPeers: each beat also goes to every peer by unicast, which power save doesn't hold
 // back (freedj-3000 does this); receivers drop the twin (any beat from a player within 100 ms of its last).
+// Claim a player number as the players do (freedj-3000's claim, Deep Symmetry's analysis): hello x 3, then 3
+// stages of 3 packets, 300 ms apart; nothing else is sent until it's ours. autoNum: pick a free one (4, 5, 6,
+// 3, 2, 1, after listening 3 s) and move on when it's defended; else claim pl_begin's number and keep it even if
+// defended. Once held it's defended against claimants, and AUTO moves if another device announces it (the
+// higher address moves). l->player is the number held or being tried.
+void pl_claim(pl* l, int autoNum);
+int  pl_claimed(const pl* l);                     // the number is ours
 // a datagram that came in on one of the three ports, from fromIp
 void pl_rx(pl* l, uint16_t port, const uint8_t* d, uint32_t n, uint32_t fromIp, uint32_t nowUs);
 // often (packets in come first): our announce, status and beats go out from here. ip 0 = not on a network yet.
@@ -111,6 +127,10 @@ int  pl_event(pl* l, uint8_t* arg);               // the next PL_EV_*, PL_EV_NON
 
 // The packet builders and the pitch field, for tests and other tools
 uint32_t pl_build_announce(pl* l, uint8_t* p, uint32_t ip, const uint8_t mac[6]);
+uint32_t pl_build_hello(pl* l, uint8_t* p);
+uint32_t pl_build_claim(pl* l, uint8_t* p, int stage, uint8_t counter, uint32_t ip, const uint8_t mac[6]);
+uint32_t pl_build_defense(pl* l, uint8_t* p, uint8_t number, uint32_t ip);
+int      pl_pick_number(const uint8_t* used, int nused, const uint8_t* tried, int ntried);   // AUTO's next, 0 none
 uint32_t pl_build_status(pl* l, uint8_t* p, const pl_ours* o, uint32_t counter);
 uint32_t pl_build_beat(pl* l, uint8_t* p, const pl_ours* o);
 float    pl_pitch_of(const uint8_t* p);

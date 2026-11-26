@@ -489,6 +489,236 @@ static void f3k_master_rules(uint32_t t0)
     CHECK(pl_is_master(&l), "it still shows master with sync 9 vs our 2: we hold");
 }
 
+// ── The player number claim (freedj-3000's ClaimGuard and claim_number tests) ──
+
+static int claimsSent(uint8_t kind) { return count(PL_PORT_ANNOUNCE, kind); }
+static void claimAnnounce(pl* l, uint8_t player, uint32_t ip, uint32_t now)
+{
+    static pl other;
+    pl_begin(&other, player, "OTHER", cap, 0);
+    uint8_t a[0x36];
+    pl_build_announce(&other, a, ip, kMac);
+    pl_rx(l, PL_PORT_ANNOUNCE, a, sizeof a, ip, now);
+}
+// run pl's clock from t to t + us in 10 ms steps
+static uint32_t runFor(pl* l, uint32_t t, uint32_t us)
+{
+    for (uint32_t e = t + us; (int32_t)(e - t) > 0; t += 10000) pl_tick(l, t, OUR, MASK, kMac);
+    return t;
+}
+
+static void claim_packets(uint32_t t0)
+{
+    (void)t0;
+    static pl l;
+    pl_begin(&l, 3, "FM-1", cap, 0);
+    uint8_t p[0x40];
+    const uint32_t ip = ip4(169, 254, 1, 2);
+    CHECK(pl_build_hello(&l, p) == 0x26 && p[0x0a] == 0x0a && p[0x21] == 0x04, "hello: 0x26 bytes, type 0x0a, structure 4");
+    CHECK(pl_build_claim(&l, p, 1, 2, ip, kMac) == 0x2c && p[0x0a] == 0x00 && p[0x24] == 2 && !memcmp(p + 0x26, kMac, 6), "claim 1: counter, MAC");
+    l.autoNum = 1;
+    CHECK(pl_build_claim(&l, p, 2, 1, ip, kMac) == 0x32 && p[0x2e] == 3 && p[0x2f] == 1 && p[0x31] == 0x01 && !memcmp(p + 0x24, &ip, 4),
+          "claim 2: IP, number, counter, AUTO");
+    l.autoNum = 0;
+    pl_build_claim(&l, p, 2, 1, ip, kMac);
+    CHECK(p[0x31] == 0x02, "claim 2: a set number");
+    CHECK(pl_build_claim(&l, p, 3, 3, ip, kMac) == 0x26 && p[0x24] == 3 && p[0x25] == 3, "claim 3: number, counter");
+    CHECK(pl_build_defense(&l, p, 3, ip) == 0x29 && p[0x0a] == 0x08 && p[0x24] == 3 && !memcmp(p + 0x25, &ip, 4), "defense: number, our IP");
+    // announce_matches_a_cdj_3000: byte for byte, but the name and the peer count (cdj3k-emu, fw 3.22, 2026-11-20)
+    static const uint8_t cdj[0x36] = {
+        0x51, 0x73, 0x70, 0x74, 0x31, 0x57, 0x6d, 0x4a, 0x4f, 0x4c, 0x06, 0x00,
+        0x43, 0x44, 0x4a, 0x2d, 0x33, 0x30, 0x30, 0x30, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0x01, 0x03, 0x00, 0x36, 0x01, 0x01, 0x32, 0xf6, 0x68, 0x84, 0x25, 0x10,
+        0xa9, 0xfe, 0x05, 0x37, 0x03, 0x00, 0x00, 0x00, 0x01, 0x64};
+    static pl one;
+    pl_begin(&one, 1, "FM-1", cap, 0);
+    const uint8_t mac[6] = {0x32, 0xf6, 0x68, 0x84, 0x25, 0x10};
+    uint8_t a[0x36];
+    pl_build_announce(&one, a, ip4(169, 254, 5, 55), mac);
+    int diff = -1;
+    for (int i = 0; i < 0x36; i++) if (!(i >= 0x0c && i < 0x20) && i != 0x30 && a[i] != cdj[i]) { diff = i; break; }
+    CHECK(diff < 0, "our announce is a CDJ-3000's (first difference at 0x%02x)", diff);
+}
+
+static void claim_auto_order(uint32_t t0)
+{
+    (void)t0;
+    const uint8_t none[1] = {0};
+    CHECK(pl_pick_number(none, 0, none, 0) == 4, "AUTO starts at 4");
+    const uint8_t u12[2] = {1, 2}, u4[1] = {4}, u45[2] = {4, 5}, u456[3] = {4, 5, 6}, u3456[4] = {3, 4, 5, 6},
+                  u23456[5] = {2, 3, 4, 5, 6}, all[6] = {1, 2, 3, 4, 5, 6}, mixer[2] = {33, 17};
+    CHECK(pl_pick_number(u12, 2, none, 0) == 4 && pl_pick_number(u4, 1, none, 0) == 5 && pl_pick_number(u45, 2, none, 0) == 6,
+          "4, then 5, 6");
+    CHECK(pl_pick_number(u456, 3, none, 0) == 3 && pl_pick_number(u3456, 4, none, 0) == 2 && pl_pick_number(u23456, 5, none, 0) == 1,
+          "then down: 3, 2, 1");
+    CHECK(pl_pick_number(all, 6, none, 0) == 0, "all taken: none");
+    const uint8_t t4[1] = {4}, t46[2] = {4, 6}, u5[1] = {5};
+    CHECK(pl_pick_number(none, 0, t4, 1) == 5 && pl_pick_number(u5, 1, t46, 2) == 3, "skips numbers already defended");
+    CHECK(pl_pick_number(mixer, 2, none, 0) == 4, "a mixer (33) or rekordbox (17) uses no player number");
+}
+
+static void claim_sequence(uint32_t t0)
+{
+    static pl l;
+    pl_begin(&l, 3, "FM-1", cap, 0);
+    pl_claim(&l, 1);
+    s_nout = 0;
+    uint32_t t = runFor(&l, t0, 1000000);
+    CHECK(claimsSent(0x0a) == 3 && s_nout == 3, "hello x 3 in the first second, nothing else (%d sent)", s_nout);
+    CHECK(s_out[1].ip == ip4(169, 254, 255, 255) && s_out[1].port == PL_PORT_ANNOUNCE, "broadcast on 50000");
+    t = runFor(&l, t, 1900000);
+    CHECK(s_nout == 3, "AUTO listens until 3 s");
+    t = runFor(&l, t, 2800000);
+    CHECK(claimsSent(0x00) == 3 && claimsSent(0x02) == 3 && claimsSent(0x04) == 3, "3 stages x 3 packets");
+    CHECK(!pl_claimed(&l) && !find(PL_PORT_ANNOUNCE, 0x06), "not ours yet, no announce");
+    const sent* c2 = find(PL_PORT_ANNOUNCE, 0x02);
+    CHECK(c2 && c2->d[0x2e] == 4 && c2->d[0x31] == 1, "AUTO on an empty network claims 4");
+    t = runFor(&l, t, 400000);
+    CHECK(pl_claimed(&l) && l.player == 4 && find(PL_PORT_ANNOUNCE, 0x06), "player 4 is ours, announced");
+    uint8_t arg; int e, got = 0;
+    while ((e = pl_event(&l, &arg)) != PL_EV_NONE) got |= e == PL_EV_CLAIMED && arg == 4;
+    CHECK(got, "logged");
+    // a timing check: the 9 claims 300 ms apart (sent at 10 ms ticks: within one tick)
+    (void)t;
+}
+
+static void claim_skips_and_moves(uint32_t t0)
+{
+    // player 4 already on the network: AUTO claims 5
+    static pl l;
+    pl_begin(&l, 3, "FM-1", cap, 0);
+    pl_claim(&l, 1);
+    s_nout = 0;
+    uint32_t t = runFor(&l, t0, 1000000);
+    claimAnnounce(&l, 4, PEER, t);
+    t = runFor(&l, t, 2100000);
+    const sent* c2 = 0;
+    t = runFor(&l, t, 1000000);
+    c2 = find(PL_PORT_ANNOUNCE, 0x02);
+    CHECK(c2 && c2->d[0x2e] == 5, "4 announced: AUTO claims 5");
+    // a defense of 5 while claiming: on to 6
+    uint8_t d[0x29];
+    static pl owner;
+    pl_begin(&owner, 5, "OWNER", cap, 0);
+    pl_build_defense(&owner, d, 5, ip4(169, 254, 0, 9));
+    pl_rx(&l, PL_PORT_ANNOUNCE, d, sizeof d, ip4(169, 254, 0, 9), t);
+    s_nout = 0;
+    t = runFor(&l, t, 4000000);
+    c2 = find(PL_PORT_ANNOUNCE, 0x02);
+    CHECK(c2 && c2->d[0x2e] == 6 && pl_claimed(&l) && l.player == 6, "5 defended: player 6 (%d)", l.player);
+    // a set number defended: kept
+    static pl k;
+    pl_begin(&k, 2, "FM-1", cap, 0);
+    pl_claim(&k, 0);
+    t = runFor(&k, t0, 1500000);
+    pl_build_defense(&owner, d, 2, ip4(169, 254, 0, 9));
+    pl_rx(&k, PL_PORT_ANNOUNCE, d, sizeof d, ip4(169, 254, 0, 9), t);
+    t = runFor(&k, t, 3000000);
+    CHECK(pl_claimed(&k) && k.player == 2, "a set number is kept, defended or not");
+    // a set number doesn't wait the 3 s
+    static pl q;
+    pl_begin(&q, 2, "FM-1", cap, 0);
+    pl_claim(&q, 0);
+    runFor(&q, t0, 4000000);
+    CHECK(pl_claimed(&q), "a set number: ours after ~3.9 s (hello 0.9 + 9 x 0.3)");
+}
+
+static void claim_defended_once_held(uint32_t t0)
+{
+    static pl l;
+    pl_begin(&l, 2, "FM-1", cap, 0);
+    pl_tick(&l, t0, OUR, MASK, kMac);              // (held, pl_begin's way: our address known)
+    static pl other;
+    pl_begin(&other, 2, "OTHER", cap, 0);
+    uint8_t c[0x40];
+    s_nout = 0;
+    pl_rx(&l, PL_PORT_ANNOUNCE, c, pl_build_claim(&other, c, 3, 1, PEER, kMac), PEER, t0 + 10);
+    const sent* d = find(PL_PORT_ANNOUNCE, 0x08);
+    CHECK(d && d->ip == PEER && d->d[0x24] == 2 && !memcmp(d->d + 0x25, &OUR, 4), "a claim for our 2: defended, to it, with our address");
+    other.player = 3;
+    s_nout = 0;
+    pl_rx(&l, PL_PORT_ANNOUNCE, c, pl_build_claim(&other, c, 3, 1, PEER, kMac), PEER, t0 + 20);
+    CHECK(!find(PL_PORT_ANNOUNCE, 0x08), "a claim for 3: not ours");
+    // a stage 2 to a mixer (0x0b set) isn't a claim
+    other.player = 2;
+    pl_build_claim(&other, c, 2, 1, PEER, kMac);
+    c[0x0b] = 1;
+    s_nout = 0;
+    pl_rx(&l, PL_PORT_ANNOUNCE, c, 0x32, PEER, t0 + 30);
+    CHECK(!find(PL_PORT_ANNOUNCE, 0x08), "a request to a mixer isn't a claim");
+    // still claiming: the same number isn't ours to defend
+    static pl k;
+    pl_begin(&k, 2, "FM-1", cap, 0);
+    pl_claim(&k, 0);
+    pl_tick(&k, t0, OUR, MASK, kMac);
+    s_nout = 0;
+    pl_rx(&k, PL_PORT_ANNOUNCE, c, pl_build_claim(&other, c, 3, 1, PEER, kMac), PEER, t0 + 10);
+    CHECK(!find(PL_PORT_ANNOUNCE, 0x08), "while claiming: no defense");
+    // our own claim traffic, back: ignored (no defense of ourselves, no "taken")
+    uint8_t dd[0x29];
+    pl_rx(&k, PL_PORT_ANNOUNCE, dd, pl_build_defense(&k, dd, 2, OUR), OUR, t0 + 20);
+    CHECK(k.defended == 0, "our own defense, back: ignored");
+}
+
+static void claim_reclaims(uint32_t t0)
+{
+    static pl owner;
+    pl_begin(&owner, 1, "OWNER", cap, 0);
+    uint8_t d[0x29];
+    pl_build_defense(&owner, d, 1, PEER);
+    // a defense of the number we hold: AUTO moves, a set number doesn't
+    static pl a;
+    pl_begin(&a, 1, "FM-1", cap, 0);
+    a.autoNum = 1;
+    pl_tick(&a, t0, OUR, MASK, kMac);
+    pl_rx(&a, PL_PORT_ANNOUNCE, d, sizeof d, PEER, t0 + 10);
+    s_nout = 0;
+    pl_tick(&a, t0 + 20, OUR, MASK, kMac);
+    CHECK(a.claiming && claimsSent(0x0a) == 0, "AUTO: defended once held, claims again (no hello)");
+    static pl b;
+    pl_begin(&b, 1, "FM-1", cap, 0);
+    pl_tick(&b, t0, OUR, MASK, kMac);
+    pl_rx(&b, PL_PORT_ANNOUNCE, d, sizeof d, PEER, t0 + 10);
+    pl_tick(&b, t0 + 20, OUR, MASK, kMac);
+    CHECK(!b.claiming, "a set number: kept");
+    // an announce with our number: only the higher address moves
+    static pl hi;
+    pl_begin(&hi, 4, "FM-1", cap, 0);
+    hi.autoNum = 1;
+    pl_tick(&hi, t0, OUR, MASK, kMac);                // we are 169.254.3.3
+    claimAnnounce(&hi, 4, ip4(169, 254, 0, 2), t0 + 10);
+    pl_tick(&hi, t0 + 20, OUR, MASK, kMac);
+    CHECK(hi.claiming, "a lower address announces our 4: we move");
+    static pl lo;
+    pl_begin(&lo, 4, "FM-1", cap, 0);
+    lo.autoNum = 1;
+    pl_tick(&lo, t0, OUR, MASK, kMac);
+    claimAnnounce(&lo, 4, ip4(169, 254, 9, 9), t0 + 10);
+    pl_tick(&lo, t0 + 20, OUR, MASK, kMac);
+    CHECK(!lo.claiming, "a higher address: it moves, we stay");
+    // a device we defended against announcing anyway doesn't move us
+    static pl dv;
+    pl_begin(&dv, 1, "FM-1", cap, 0);
+    dv.autoNum = 1;
+    pl_tick(&dv, t0, OUR, MASK, kMac);
+    static pl cl;
+    pl_begin(&cl, 1, "OTHER", cap, 0);
+    uint8_t c[0x40];
+    const uint32_t low = ip4(169, 254, 0, 2);
+    pl_rx(&dv, PL_PORT_ANNOUNCE, c, pl_build_claim(&cl, c, 2, 1, low, kMac), low, t0 + 10);
+    claimAnnounce(&dv, 1, low, t0 + 20);
+    pl_tick(&dv, t0 + 30, OUR, MASK, kMac);
+    CHECK(!dv.claiming, "the one we told: it's in the wrong, we keep the number");
+    // our own announce, back: no collision with ourselves
+    static pl me;
+    pl_begin(&me, 4, "FM-1", cap, 0);
+    me.autoNum = 1;
+    pl_tick(&me, t0, OUR, MASK, kMac);
+    claimAnnounce(&me, 4, OUR, t0 + 10);
+    pl_tick(&me, t0 + 20, OUR, MASK, kMac);
+    CHECK(!me.claiming, "our own announce: not a collision");
+}
+
 int main(void)
 {
     OUR = ip4(169, 254, 3, 3); PEER = ip4(169, 254, 0, 2);
@@ -511,6 +741,12 @@ int main(void)
         f3k_beats_round_trip(t0);
         f3k_twins(t0);
         f3k_master_rules(t0);
+        claim_packets(t0);
+        claim_auto_order(t0);
+        claim_sequence(t0);
+        claim_skips_and_moves(t0);
+        claim_defended_once_held(t0);
+        claim_reclaims(t0);
     }
     printf("prolink_test: %d checks, %d failed\n", s_n, s_fail);
     return s_fail != 0;

@@ -4,6 +4,11 @@
 #include "prolink.h"
 
 enum { K_ANNOUNCE = 0x06, K_BEAT = 0x28, K_STATUS = 0x0a };
+// Port 50000, the number claim: hello, stages 1-3, a defense (freedj-3000's link/src/prodj.rs)
+enum { K_HELLO = 0x0a, K_CLAIM1 = 0x00, K_CLAIM2 = 0x02, K_CLAIM3 = 0x04, K_DEFENSE = 0x08 };
+#define CLAIM_STEP_US  300000u                    // between the claim's packets, as the players space them
+#define CLAIM_WATCH_US 3000000u                   // AUTO listens this long for keep-alives first
+static const uint8_t kAutoOrder[6] = {4, 5, 6, 3, 2, 1};   // above the numbers a DJ gives from 1
 // Port 50001 control packets (Deep Symmetry's analysis; freedj-3000 for the handoff, tested against an XDJ-1000MK2)
 enum { K_FADER_START = 0x02, K_ON_AIR = 0x03, K_MASTER_REQ = 0x26, K_MASTER_RSP = 0x27, K_SYNC_CTL = 0x2a };
 enum { SYNC_ON = 0x10, SYNC_OFF = 0x20, BECOME_MASTER = 0x01 };
@@ -113,6 +118,7 @@ static pl_peer* peerFor(pl* l, uint8_t player, uint32_t ip, uint32_t now)
 }
 
 static int isLink(const uint8_t* d, uint32_t n) { return n > 0x0b && same(d, kMagic, 10); }
+static int onClaimTraffic(pl* l, const uint8_t* d, uint32_t n, uint32_t fromIp);
 
 static void onAnnounce(pl* l, const uint8_t* d, uint32_t n, uint32_t now)
 {
@@ -240,7 +246,7 @@ void pl_rx(pl* l, uint16_t port, const uint8_t* d, uint32_t n, uint32_t fromIp, 
     } else if (port == PL_PORT_STATUS) {
         onStatus(l, d, n, fromIp, nowUs);
     } else if (port == PL_PORT_ANNOUNCE) {
-        onAnnounce(l, d, n, nowUs);
+        if (!onClaimTraffic(l, d, n, fromIp)) onAnnounce(l, d, n, nowUs);
     }
 }
 
@@ -306,7 +312,9 @@ uint32_t pl_build_announce(pl* l, uint8_t* p, uint32_t ip, const uint8_t mac[6])
     p[0x0a] = K_ANNOUNCE;
     copy(p + 0x0c, l->name, PL_NAME);
     p[0x20] = 0x01;
-    p[0x21] = 0x02;
+    // 0x03, as a CDJ-3000 sends it (fw 3.22): an XDJ-1000MK2's 0x02 made every CDJ-3000 on the network show
+    // "Linked to player with older firmware" (freedj-3000)
+    p[0x21] = 0x03;
     put16(p + 0x22, 0x36);
     p[0x24] = l->player;
     p[0x25] = 0x01;                               // device type: CDJ
@@ -314,6 +322,7 @@ uint32_t pl_build_announce(pl* l, uint8_t* p, uint32_t ip, const uint8_t mac[6])
     copy(p + 0x2c, &ip, 4);
     p[0x30] = 0x01;
     p[0x34] = 0x01;
+    p[0x35] = 0x64;                               // as a CDJ-3000 sends it
     return 0x36;
 }
 
@@ -383,6 +392,198 @@ uint32_t pl_build_beat(pl* l, uint8_t* p, const pl_ours* o)
     return 0x60;
 }
 
+// ── The number claim ──
+
+// a port-50000 packet: magic, type, name, 01 <structure>, length
+static void claimHeader(pl* l, uint8_t* p, uint8_t kind, uint8_t structure, uint32_t len)
+{
+    zero(p, len);
+    copy(p, kMagic, 10);
+    p[0x0a] = kind;
+    copy(p + 0x0c, l->name, PL_NAME);
+    p[0x20] = 0x01;
+    p[0x21] = structure;
+    put16(p + 0x22, (uint16_t)len);
+}
+
+uint32_t pl_build_hello(pl* l, uint8_t* p)        // "coming online", 3 times before claiming
+{
+    claimHeader(l, p, K_HELLO, 0x04, 0x26);
+    p[0x24] = 0x01;                               // a player
+    p[0x25] = 0x40;
+    return 0x26;
+}
+
+uint32_t pl_build_claim(pl* l, uint8_t* p, int stage, uint8_t counter, uint32_t ip, const uint8_t mac[6])
+{
+    if (stage == 1) {                             // packet counter 1-3, our MAC
+        claimHeader(l, p, K_CLAIM1, 0x03, 0x2c);
+        p[0x24] = counter;
+        p[0x25] = 0x01;
+        copy(p + 0x26, mac, 6);
+        return 0x2c;
+    }
+    if (stage == 2) {                             // IP, MAC, the number, picked by us (AUTO) or set
+        claimHeader(l, p, K_CLAIM2, 0x03, 0x32);
+        copy(p + 0x24, &ip, 4);
+        copy(p + 0x28, mac, 6);
+        p[0x2e] = l->player;
+        p[0x2f] = counter;
+        p[0x30] = 0x01;
+        p[0x31] = l->autoNum ? 0x01 : 0x02;
+        return 0x32;
+    }
+    claimHeader(l, p, K_CLAIM3, 0x03, 0x26);      // the number, final
+    p[0x24] = l->player;
+    p[0x25] = counter;
+    return 0x26;
+}
+
+uint32_t pl_build_defense(pl* l, uint8_t* p, uint8_t number, uint32_t ip)   // "number is mine, at ip", to a claimant
+{
+    claimHeader(l, p, K_DEFENSE, 0x02, 0x29);
+    p[0x24] = number;
+    copy(p + 0x25, &ip, 4);
+    return 0x29;
+}
+
+int pl_pick_number(const uint8_t* used, int nused, const uint8_t* tried, int ntried)
+{
+    for (int i = 0; i < 6; i++) {
+        const uint8_t n = kAutoOrder[i];
+        int bad = 0;
+        for (int k = 0; k < nused; k++) bad |= used[k] == n;
+        for (int k = 0; k < ntried; k++) bad |= tried[k] == n;
+        if (!bad) return n;
+    }
+    return 0;
+}
+
+// the number a stage 2 / 3 claim asks for (byte 0x0b set: a request to a mixer, not a claim), 0 none
+static uint8_t claimOf(const uint8_t* d, uint32_t n)
+{
+    if (!isLink(d, n) || d[0x0b] != 0) return 0;
+    if (d[0x0a] == K_CLAIM2 && n >= 0x32) return d[0x2e];
+    if (d[0x0a] == K_CLAIM3 && n >= 0x26) return d[0x24];
+    return 0;
+}
+
+static int listed(const uint32_t* v, uint8_t n, uint32_t ip) { for (int i = 0; i < n; i++) if (v[i] == ip) return 1; return 0; }
+static void list(uint32_t* v, uint8_t* n, uint32_t ip) { if (!listed(v, *n, ip) && *n < PL_CLAIM_DEFENDED) v[(*n)++] = ip; }
+static uint32_t hostOrder(uint32_t wire) { const uint8_t* b = (const uint8_t*)&wire; return be32(b); }
+
+// port 50000 before the announce is recorded: 1 handled (claim traffic, or our own)
+static int onClaimTraffic(pl* l, const uint8_t* d, uint32_t n, uint32_t fromIp)
+{
+    if (!isLink(d, n)) return 1;
+    if (l->ip && fromIp == l->ip) return 1;       // our own broadcast, back
+    const uint8_t ours = l->player, held = !l->claiming;
+    if (d[0x0a] == K_DEFENSE) {
+        const uint8_t num = n >= 0x25 ? d[0x24] : 0;
+        if (num && num == ours) {
+            if (!held) l->defended = num;          // ours being claimed: taken
+            else if (l->autoNum && !l->reclaim) { l->reclaim = 1; event(l, PL_EV_RECLAIM, num); }
+        }
+        return 1;
+    }
+    const uint8_t claim = claimOf(d, n);
+    if (claim || d[0x0a] == K_CLAIM1 || d[0x0a] == K_HELLO) {
+        if (claim && held && claim == ours && l->ip) {
+            if (!listed(l->defendedAgainst, l->nDefended, fromIp)) event(l, PL_EV_DEFENDING, claim);
+            list(l->defendedAgainst, &l->nDefended, fromIp);
+            uint8_t out[0x29];
+            l->send(l->ctx, fromIp, PL_PORT_ANNOUNCE, out, pl_build_defense(l, out, claim, l->ip));
+        }
+        return 1;
+    }
+    if (d[0x0a] == K_ANNOUNCE && n >= 0x30 && held && d[0x24] == ours && !listed(l->warned, l->nWarned, fromIp)) {
+        // A device that never claimed (or ignored our defense) uses our number. AUTO moves, a set number stays;
+        // two that finished claiming the same number at once both see this: only the higher address moves.
+        list(l->warned, &l->nWarned, fromIp);
+        if (!listed(l->defendedAgainst, l->nDefended, fromIp) && l->autoNum && l->ip && hostOrder(l->ip) > hostOrder(fromIp)) {
+            l->reclaim = 1;
+            event(l, PL_EV_RECLAIM, ours);
+        }
+        return 1;
+    }
+    return 0;
+}
+
+static void startClaim(pl* l, uint32_t now, int hello)
+{
+    l->claiming = 1;
+    l->stage = 0;
+    l->ntried = 0;
+    l->defended = 0;
+    l->helloLeft = hello ? 3 : 0;
+    l->claimNextUs = now;
+    l->watchUntilUs = now + (l->autoNum ? CLAIM_WATCH_US : 0);
+    l->nWarned = 0;
+}
+
+void pl_claim(pl* l, int autoNum)
+{
+    l->autoNum = autoNum != 0;
+    l->claiming = 1;
+    l->started = 0;                               // (startClaim on the first tick with an address)
+    l->stage = 0xFF;
+}
+
+int pl_claimed(const pl* l) { return !l->claiming; }
+
+// the claim, from pl_tick: returns how soon it wants to run again
+static uint32_t claimTick(pl* l, uint32_t now, uint32_t bcast, uint32_t ip, const uint8_t mac[6])
+{
+    if (l->stage == 0xFF) startClaim(l, now, 1);
+    if ((int32_t)(l->claimNextUs - now) > 0) return l->claimNextUs - now;
+    uint8_t* out = l->out;
+    if (l->helloLeft) {
+        l->helloLeft--;
+        l->send(l->ctx, bcast, PL_PORT_ANNOUNCE, out, pl_build_hello(l, out));
+        l->claimNextUs = now + CLAIM_STEP_US;
+        return CLAIM_STEP_US;
+    }
+    if ((int32_t)(l->watchUntilUs - now) > 0) { l->claimNextUs = l->watchUntilUs; return l->watchUntilUs - now; }
+    // after each claim packet: the number lost (defended, or AUTO: a device announces with it)
+    if (l->stage) {
+        int taken = l->defended == l->player;
+        if (l->autoNum)
+            for (int i = 0; i < PL_MAX_PEERS; i++) taken |= alive(&l->peers[i], now) && l->peers[i].player == l->player;
+        if (taken) {
+            if (l->autoNum && l->ntried < 6) {
+                event(l, PL_EV_TAKEN, l->player);
+                l->tried[l->ntried++] = l->player;
+                l->stage = 0;
+            } else {
+                l->stage = 4;                     // a set number: kept, defended or not
+            }
+        }
+    }
+    if (l->stage == 0) {                          // pick the number (AUTO) and start stage 1
+        if (l->autoNum) {
+            uint8_t used[PL_MAX_PEERS];
+            int nu = 0;
+            for (int i = 0; i < PL_MAX_PEERS; i++) if (alive(&l->peers[i], now)) used[nu++] = l->peers[i].player;
+            const int n = pl_pick_number(used, nu, l->tried, l->ntried);
+            if (n) l->player = (uint8_t)n;        // (none free: keep trying the one we have)
+        }
+        l->defended = 0;
+        l->stage = 1;
+        l->count = 1;
+        event(l, PL_EV_CLAIMING, l->player);
+    }
+    if (l->stage <= 3) {
+        l->send(l->ctx, bcast, PL_PORT_ANNOUNCE, out, pl_build_claim(l, out, l->stage, l->count, ip, mac));
+        if (++l->count > 3) { l->count = 1; l->stage++; }
+        l->claimNextUs = now + CLAIM_STEP_US;
+        return CLAIM_STEP_US;
+    }
+    l->claiming = 0;                              // stage 4: ours
+    l->started = 0;                               // (announce and status at once)
+    event(l, PL_EV_CLAIMED, l->player);
+    return 1000;
+}
+
 void pl_begin(pl* l, uint8_t player, const char* name, pl_send_fn send, void* ctx)
 {
     zero(l, sizeof *l);
@@ -413,6 +614,12 @@ uint32_t pl_tick(pl* l, uint32_t now, uint32_t ip, uint32_t netmask, const uint8
         if (p->haveBeat && !within(now, p->beatUs, 2 * FRESH_US)) p->haveBeat = 0;
     }
     if (!ip) return wait;
+    l->ip = ip;
+    if (l->reclaim && !l->claiming) { l->reclaim = 0; l->claiming = 1; startClaim(l, now, 0); }
+    if (l->claiming) {
+        const uint32_t w = claimTick(l, now, ip | ~netmask, ip, mac);
+        if (l->claiming) return w < wait ? w : wait;
+    }
     if (!l->started) { l->started = 1; l->nextAnnounceUs = now; l->nextStatusUs = now; }
     uint8_t* out = l->out;
     const uint32_t bcast = ip | ~netmask;

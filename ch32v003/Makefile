@@ -5,6 +5,7 @@
 #   make sim     the whole deck on the computer (fw/ on emulated parts): build/sim, card image from MUSIC=
 #   make simtest scripted sessions through the sim, checked
 #   make vinyltest  the DVS decoder and vinyl rules on the computer (sides A and B, timecode.wav)
+#   make hifitest  the stereo engine (hifi/) against the C6 engine it was ported from, sample for sample
 #   make prolinktest  Pro DJ Link (fw/prolink.c) on the computer, against a real XDJ-1000MK2's packets
 #   make prolinkdiff  every packet of freedj-3000's captures through fw/prolink.c and through freedj-3000's parser
 #   make prolinkbench fw/prolink.c as player 4 beside Deckbench's simulated players on the loopback (follow, SYNC, MASTER)
@@ -30,10 +31,18 @@ build/test_lite: lite/lite.c lite/ulaw.c lite/lite.h tests/test_lite.cpp $(NANO)
 TCWAV ?= ../../freedj-esp/timecode.wav
 F3K ?= ../../freedj-3000
 CAPS := $(F3K)/reference/link-captures
+hifitest:
+	@mkdir -p build
+	g++ -O2 -Wall -Wextra -std=c++17 -Ihifi -I$(NANO)/include tests/test_hifi.cpp hifi/hifi.c $(NANO)/src/deck.cpp \
+	    $(NANO)/src/stretch.cpp $(NANO)/src/library.cpp -lm -o build/test_hifi
+	./build/test_hifi
+
 prolinktest:
 	@mkdir -p build
 	gcc -O2 -Wall -Wextra -Wconversion -Ifw sim/prolink_test.c fw/prolink.c -lm -o build/prolink_test
 	./build/prolink_test
+	gcc -O2 -Wall -Wextra -Wconversion -Ifw sim/linksync_test.c fw/linksync.c -lm -o build/linksync_test
+	./build/linksync_test
 	gcc -O2 -Wall -Wextra -Ifw sim/prolink_replay.c fw/prolink.c -o build/prolink_replay
 	@if [ -d $(CAPS) ]; then \
 	  ./build/prolink_replay $(CAPS)/xdj-1000mk2-playing-2026-08-26.log --summary | grep -q "player 1 @ 126.00 BPM, playing, beating" && \
@@ -43,7 +52,7 @@ prolinktest:
 	else echo "prolink_replay: no $(CAPS), skipped"; fi
 
 prolinkbench: prolinktest
-	gcc -O2 -Wall -Wextra -Ifw sim/prolink_seg.c fw/prolink.c fw/udpnet.c -o build/prolink_seg
+	gcc -O2 -Wall -Wextra -Ifw sim/prolink_seg.c fw/prolink.c fw/udpnet.c fw/linksync.c -lm -o build/prolink_seg
 	python3 sim/prolink_bench.py
 
 prolinkdiff: prolinktest
@@ -201,4 +210,4 @@ fm1-emu: build/fm1/flash.bin
 	$(FM1_EMU) --ms $(FM1_MS) --keys '$(FM1_KEYS)' --out $(CURDIR)/build/fm1/emu
 
 FORCE:
-.PHONY: test prolinktest prolinkdiff prolinkbench vinyltest bench pwm sd sim simtest deckbench py32 flash-py32 fm1 fm1-usb fm1-stick fm1-usb-live fm1-emu fm1-live FORCE
+.PHONY: test hifitest prolinktest prolinkdiff prolinkbench vinyltest bench pwm sd sim simtest deckbench py32 flash-py32 fm1 fm1-usb fm1-stick fm1-usb-live fm1-emu fm1-live FORCE
