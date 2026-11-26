@@ -35,3 +35,7 @@ extern lite_deck g_deck;
 
 void app_init(void);
 void app_step(void);
+// A timecode record has the deck (DVS, relative: fw/vinyl.h): the track plays at the record's speed, signed Q16
+// (0x10000 = 1x; 0 the record stopped, < 0 backwards), varispeed; PLAY, the jog, the tempo and keylock wait,
+// CUE jumps to the cue point and plays on. on = 0: the record's gone, the deck stops and has its controls back.
+void app_vinyl(int on, int32_t speedQ16);

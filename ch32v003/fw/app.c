@@ -31,7 +31,9 @@ static const uint8_t kRanges[] = { 6, 10, 16, 50 };
 
 static void rd(void* ctx, uint32_t off, uint8_t* dst, uint8_t n) { (void)ctx; trk_read(s_trk.off + off, dst, n); }
 
-static void applySpeed(void) { lite_set_speed(&g_deck, 0x10000 + s_tempoQ16 + s_nudge); }
+static uint8_t  s_vinyl;          // a timecode record has the deck (app_vinyl)
+static int32_t  s_vinylQ16;
+static void applySpeed(void) { lite_set_speed(&g_deck, s_vinyl ? s_vinylQ16 : 0x10000 + s_tempoQ16 + s_nudge); }
 
 static void setFader(int16_t f)
 {
@@ -77,7 +79,7 @@ static void load(uint16_t i)
 
 static void play(int pressed)
 {
-    if (!pressed || g_app.track == APP_NONE) return;
+    if (!pressed || g_app.track == APP_NONE || s_vinyl) return;   // (the record plays it)
     if (s_scrub) { endScrub(); g_app.state = ST_PLAY; return; }      // play on from the scrub
     if (g_app.state == ST_CUE) g_app.state = ST_PLAY;                 // PLAY during a preview: keep going
     else if (g_app.state == ST_PLAY) stop();
@@ -87,6 +89,8 @@ static void play(int pressed)
 static void cue(int pressed)
 {
     if (g_app.track == APP_NONE) return;
+    if (s_vinyl) { if (pressed) lite_seek(&g_deck, (int32_t)g_app.cue); return; }   // the record: to the cue, on
+
     if (pressed) {
         if (g_app.state == ST_PLAY) { stop(); s_pending = P_CUE; }     // back to the cue, paused
         else {
@@ -103,7 +107,7 @@ static void cue(int pressed)
 
 static void jog(int16_t d)
 {
-    if (g_app.track == APP_NONE || !d) return;
+    if (g_app.track == APP_NONE || !d || s_vinyl) return;
     if (g_app.state == ST_STOP) {                                      // scrub: play what's under the jog
         if (g_deck.playing && !s_scrub) return;                        // still fading out
         if (!s_scrub) {
@@ -125,7 +129,28 @@ static void jog(int16_t d)
     }
 }
 
-static void keylock(void) { g_app.keylock ^= 1; lite_set_keylock(&g_deck, g_app.keylock); }
+static void keylock(void) { g_app.keylock ^= 1; if (!s_vinyl) lite_set_keylock(&g_deck, g_app.keylock); }
+
+#define VINYL_MAX_Q16 0x40000             // 4x either way
+void app_vinyl(int on, int32_t speedQ16)
+{
+    if (!on) {
+        if (!s_vinyl) return;
+        s_vinyl = 0;
+        stop();
+        lite_set_keylock(&g_deck, g_app.keylock);
+        applySpeed();
+        return;
+    }
+    if (g_app.track == APP_NONE) return;
+    s_vinylQ16 = speedQ16 > VINYL_MAX_Q16 ? VINYL_MAX_Q16 : speedQ16 < -VINYL_MAX_Q16 ? -VINYL_MAX_Q16 : speedQ16;
+    if (!s_vinyl) { s_vinyl = 1; endScrub(); s_nudge = 0; lite_set_keylock(&g_deck, 0); }   // varispeed, both ways
+    if (g_app.state == ST_STOP && !s_pending && !g_deck.playing && lite_pos(&g_deck) < (int32_t)g_app.frames) {
+        g_app.state = ST_PLAY; lite_play(&g_deck, 1);                  // (on: after a load, or from the stop)
+    }
+    if (s_vinylQ16 < 0 && lite_pos(&g_deck) <= 0) s_vinylQ16 = 0;     // (backwards past the start: held there)
+    applySpeed();
+}
 
 static void range(void)
 {
@@ -293,8 +318,10 @@ static void mount(void)
 
 static uint8_t s_mounted;
 
-void app_init(void)
+void app_init(void)                               // (again for each new card: a stick back in, DVS again)
 {
+    s_mounted = 0; g_app.err = 0; g_app.count = 0; g_app.browsing = 0; g_app.state = ST_STOP;
+    s_pending = P_NONE; s_scrub = 0; s_nudge = 0; s_vinyl = 0;
     g_app.track = APP_NONE;
     g_app.range = 10;
     ui_begin();                                   // the mount waits for this to go out
@@ -321,7 +348,7 @@ static void afterBlock(void)
         else loadNow(g_app.sel);
         s_pending = P_NONE;
     }
-    if (g_app.state != ST_STOP && lite_pos(&g_deck) >= (int32_t)g_app.frames) stop();   // the end
+    if (g_app.state != ST_STOP && lite_pos(&g_deck) >= (int32_t)g_app.frames && !(s_vinyl && s_vinylQ16 < 0)) stop();   // the end
 }
 
 void app_step(void)

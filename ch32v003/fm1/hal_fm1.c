@@ -4,8 +4,8 @@
 // the deck runs on an M-VAVE FM-1, or in fm1-emu. fm1-dock keeps USB, the installer and the
 // rescue; this file turns its events, its audio callback and its screen into what fw/ expects.
 //
-//   SELECT    the jog (FX + SELECT opens the track list; in   PLAY  PLAY
-//             it SELECT moves, its push loads, FX tapped closes)
+//   SELECT    the jog (FX + SELECT opens the track list; in   PLAY  PLAY (in the list: loads)
+//             it SELECT moves, SEL or PLAY loads, FX closes)
 //   KNOB1     the tempo (the pot: 512 is 0 %)                SEQ   CUE (left of PLAY, as on a CDJ)
 //   FX        SHIFT                                          EDIT  the encoder's push: keylock,
 //   MIDI IN   the DJ2Go map, as over the CH32's bridge             load in the list
@@ -40,7 +40,6 @@ static uint8_t btnPin(uint32_t id)
     case HB_BTN_SEQ:  return PIN_CUE;
     case HB_BTN_FX:   return PIN_SHIFT;
     case HB_BTN_EDIT: return PIN_PUSH;
-    case HB_BTN_SEL:  return PIN_PUSH;            // SELECT's own push: loads in the list, as EDIT
     }
     return 0;
 }
@@ -48,8 +47,14 @@ static uint8_t btnPin(uint32_t id)
 static void ui(uint32_t ev, int32_t arg)
 {
     switch (HB_EV_KIND(ev)) {
-    case HB_EV_BTN_DOWN: s_pins |= btnPin(HB_EV_ID(ev)); break;
-    case HB_EV_BTN_UP:   s_pins &= (uint8_t)~btnPin(HB_EV_ID(ev)); break;
+    case HB_EV_BTN_DOWN:                          // in the list PLAY loads too, as in fm1-dock's picker
+        if (g_app.browsing && (HB_EV_ID(ev) == HB_BTN_PLAY || HB_EV_ID(ev) == HB_BTN_SEL)) s_pins |= PIN_PUSH;
+        else s_pins |= btnPin(HB_EV_ID(ev));     // (SEL, the picker's load button, only loads: EDIT is keylock)
+        break;
+    case HB_EV_BTN_UP:
+        s_pins &= (uint8_t)~btnPin(HB_EV_ID(ev));
+        if (HB_EV_ID(ev) == HB_BTN_PLAY || HB_EV_ID(ev) == HB_BTN_SEL) s_pins &= (uint8_t)~PIN_PUSH;
+        break;
     case HB_EV_ENC:
         if (HB_EV_ID(ev) == HB_ENC_SELECT) s_jog = (int16_t)(s_jog + arg);
         else if (HB_EV_ID(ev) == HB_ENC_KNOB1) {
@@ -82,6 +87,9 @@ int hal_uart_rx(void)
     return b;
 }
 
+// where the main loop's busy time goes (the CPU meter counts waiting too): USB waits, the panel's SPI, the rest
+static uint32_t s_tUsb, s_tLcd;
+#define TIMED(acc, stmt) do { const uint32_t t_ = H->ticks(); stmt; acc += H->ticks() - t_; } while (0)
 static sd_emu s_card;
 #if FM1_HOST
 // ---- the card, from the computer over USB (tools/fm1host.py)
@@ -263,12 +271,110 @@ static int data(const uint8_t* p, uint32_t n)
     }
     return 1;
 }
+#elif FM1_STICK
+// ---- the card: a USB stick on the FM-1's own port (usbmsc.c), through a powered, hub-less OTG adapter
+// fm1-dock 0.9.0 drives the port as a device from its 2 kHz USB poll, and every path to the controller (the poll,
+// the audio interrupt's uac_service, the replies) is gated by its `usb.up` / `usb.config`; `usb.detached` stops
+// its retry (src/usb.c). They're written here, at their place in that build (commit 5d16166: build/fm1-dock.syms
+// `usb` 0x01C10F68, up +0, config +1, detached +64), checked first by the bytes of its usb_poll in flash.
+// Not fm1-dock's API: see the README's "Revisit".
+#include "usbmsc.h"
+#define DOCK_USB     0x01C10F68u
+#define DOCK_UP      (*(volatile uint8_t *)(DOCK_USB + 0u))
+#define DOCK_CONFIG  (*(volatile uint8_t *)(DOCK_USB + 1u))
+#define DOCK_DETACH  (*(volatile uint8_t *)(DOCK_USB + 64u))
+static int dockKnown(void)                        // fm1-dock 0.9.0 (5d16166): its usb_poll, 0x0200134C
+{
+    static const uint8_t k[16] = {0x68, 0xfe, 0x7f, 0x04, 0xe2, 0x9e, 0xce, 0xff, 0xe0, 0x0e, 0xc1, 0x01, 0x50, 0xee, 0xe8, 0x08};
+    const volatile uint8_t* p = (const volatile uint8_t*)0x0200134Cu;
+    for (int i = 0; i < 16; i++) if (p[i] != k[i]) return 0;
+    return 1;
+}
+static uint32_t stickTicks(void) { return H->ticks(); }
+static void stickIdle(void)                       // (a long open, through hubs: fm1-dock's watchdog bites at 8 s)
+{
+    static uint32_t at;
+    const uint32_t now = H->ticks();
+    if (now - at < 24000u * 100u) return;
+    at = now;
+    // fm1-dock's fm1_wdt_feed() (hal/fm1_sys.h): P33 WDT_CON |= 0x40 (clear), interrupts off around it.
+    // Modules aren't given it (probes are): another of the TODO's fm1-dock internals.
+    volatile uint32_t* con = (volatile uint32_t*)0x13E08u;
+    volatile uint32_t* dat = (volatile uint32_t*)0x13E0Cu;
+    const uint8_t b[3] = {(uint8_t)(1u << 5), 0x80u, 0x40u};   // op 1 (or), address 0x80, 0x40
+    __asm__ volatile("cli" ::: "memory");
+    *con &= ~(1u << 8); *con |= 1u;
+    for (int i = 0; i < 3; i++) {
+        uint32_t n = 100000u;
+        *dat = b[i]; *con |= 1u << 4; (void)*con;
+        while ((*con & (1u << 1)) && --n) ;
+    }
+    *con &= ~((1u << 0) | (1u << 8));
+    __asm__ volatile("csync\n\tsti" ::: "memory");
+}
+static const umsc_env kStickEnv = {stickTicks, stickIdle};
+static uint8_t s_stick;                           // 0 asking, 1 waiting for it, 2 the deck on it, 3 not this fm1-dock, 4 failed
+static uint8_t s_took;
+static void take(void)                            // the port from fm1-dock (its poll first: then nothing touches it)
+{
+    DOCK_UP = 0; DOCK_CONFIG = 0; DOCK_DETACH = 1;
+    s_took = 1;
+    umsc_host(&kStickEnv);
+}
+static void give(void)                            // back: fm1-dock's retry attaches it to a computer again within 1 s
+{
+    if (!s_took) return;
+    umsc_close();
+    DOCK_CONFIG = 0; DOCK_DETACH = 0; DOCK_UP = 0;
+    s_took = 0;
+}
+// 8 blocks a READ(10), 4 of them kept (16 KB): the mu-law is read in order, the peaks elsewhere
+#define SLOT  8u
+#define SLOTS 4u
+static uint8_t  s_cbuf[SLOTS][SLOT * 512];
+static uint32_t s_cfirst[SLOTS], s_cage[SLOTS], s_clock;   // first block + 1 (0: empty)
+static uint32_t s_rdErr;
+static uint8_t s_drive;                           // the tracks from the stick (1) or the module's flash (0: DVS, no drive)
+static int flashRead(void* ctx, uint32_t lba, uint8_t* dst);
+static int memRead(void* ctx, uint32_t lba, uint8_t* dst)
+{
+    if (s_stick == 2 && !s_drive) return flashRead(ctx, lba, dst);
+    (void)ctx;
+    if (s_stick != 2) { for (int i = 0; i < 512; i++) dst[i] = 0; return 0; }   // (pulled out: silence)
+    uint32_t k = SLOTS;
+    for (uint32_t i = 0; i < SLOTS; i++)
+        if (s_cfirst[i] && lba + 1 >= s_cfirst[i] && lba + 1 < s_cfirst[i] + SLOT) { k = i; break; }
+    if (k == SLOTS) {
+        k = 0;
+        for (uint32_t i = 1; i < SLOTS; i++) if (s_cage[i] < s_cage[k]) k = i;
+        const uint32_t base = lba & ~(SLOT - 1u);
+        const uint32_t n = umsc_blocks && base + SLOT > umsc_blocks ? umsc_blocks - base : SLOT;
+        s_cfirst[k] = 0;
+        const uint32_t rec = umsc_recoveries;
+        int rr_;
+        TIMED(s_tUsb, rr_ = umsc_read(base, n, s_cbuf[k]));
+        if (rr_ != 0) {
+            s_rdErr++;
+            H->log_u32("stick: read failed at block", base); H->log_u32("stick: error", umsc_err);
+            for (int i = 0; i < 512; i++) dst[i] = 0;
+            return 0;
+        }
+        if (umsc_recoveries != rec) { H->log_u32("stick: recovered at block", base); H->log_u32("stick: error was", umsc_err); }
+        s_cfirst[k] = base + 1;
+    }
+    s_cage[k] = ++s_clock;
+    const uint8_t* src = s_cbuf[k] + (lba + 1 - s_cfirst[k]) * 512u;
+    for (int i = 0; i < 512; i++) dst[i] = src[i];
+    return 0;
+}
 #else
-// ---- the card, from the module's flash
+#endif
+#if !FM1_HOST
+// ---- the card, from the module's flash (the stick build too: its tracks with no drive, as with DVS)
 extern const uint32_t memcard_blocks, memcard_lba[];
 extern const uint16_t memcard_count;
 extern const uint8_t memcard_data[][512];
-static int memRead(void* ctx, uint32_t lba, uint8_t* dst)
+static int flashRead(void* ctx, uint32_t lba, uint8_t* dst)
 {
     (void)ctx;
     uint16_t lo = 0, hi = memcard_count;
@@ -277,6 +383,9 @@ static int memRead(void* ctx, uint32_t lba, uint8_t* dst)
     for (int i = 0; i < 512; i++) dst[i] = src ? src[i] : 0;
     return 0;
 }
+#if !FM1_STICK
+#define memRead flashRead
+#endif
 #endif
 void    hal_sd_select(int on) { sd_emu_select(&s_card, on); }
 uint8_t hal_spi(uint8_t out) { return sd_emu_xfer(&s_card, out); }
@@ -311,7 +420,7 @@ static void pump(void)                            // the next strip of the band 
 {
     if (lcdFree()) return;
     const uint32_t k = s_sendH - s_sendRow < STRIP ? s_sendH - s_sendRow : STRIP;
-    H->blit(0, s_sendY + (int32_t)s_sendRow, SCALE_W, (int32_t)k, s_px + s_sendRow * SCALE_W);
+    TIMED(s_tLcd, H->blit(0, s_sendY + (int32_t)s_sendRow, SCALE_W, (int32_t)k, s_px + s_sendRow * SCALE_W));
     s_sendRow += k;
 }
 
@@ -401,8 +510,8 @@ static int waveStep(void)                          // 1: it used the pass (drew 
     }
     if (s_wState <= 3) { putWave((uint8_t)(4 + s_wState - 1), 0); s_wState++; s_wPair = 0; return 1; }
     const uint32_t a = WAVE_H / 2 - 1 - s_wPair, b = WAVE_H / 2 + s_wPair;
-    H->blit(0, WAVE_Y + (int32_t)a, SCALE_W, 1, s_wpx + a * SCALE_W);
-    H->blit(0, WAVE_Y + (int32_t)b, SCALE_W, 1, s_wpx + b * SCALE_W);
+    TIMED(s_tLcd, H->blit(0, WAVE_Y + (int32_t)a, SCALE_W, 1, s_wpx + a * SCALE_W));
+    TIMED(s_tLcd, H->blit(0, WAVE_Y + (int32_t)b, SCALE_W, 1, s_wpx + b * SCALE_W));
     if (++s_wPair >= WAVE_H / 2) s_wState = 0;
     return 1;
 }
@@ -488,16 +597,209 @@ static void render(int32_t* out, uint32_t n)
 static void lights(void)
 {
     static uint8_t shown = 0xFF;
-    const uint8_t st = g_app.state;
+    const uint8_t st = (uint8_t)(g_app.state | (g_app.browsing ? 0x80 : 0));
     if (st == shown) return;
     shown = st;
-    H->led(HB_BTN_PLAY, st == ST_PLAY);           // lit or off (fm1-dock's glow, 2, is a fast pulse that fm1-emu
-    H->led(HB_BTN_SEQ, st == ST_CUE);             //  shows as a flicker)
+    H->led(HB_BTN_SEL, g_app.browsing ? 1 : 0);   // the list open: SEL lit (it loads), as in the picker
+    H->led(HB_BTN_PLAY, (st & 0x7F) == ST_PLAY);           // lit or off (fm1-dock's glow, 2, is a fast pulse that fm1-emu
+    H->led(HB_BTN_SEQ, (st & 0x7F) == ST_CUE);             //  shows as a flicker)
 }
 
+#if FM1_STICK
+// ---- DVS: a USB audio interface (a UCA202) on the port, a Serato timecode record into it: the record drives the
+// deck (relative: its speed and direction; fw/vinyl.h). The side and the decoder flags found first (vinyl_scan).
+#include "timecode.h"
+#include "vinyl.h"
+static uint8_t    s_dvs, s_dvsFound;              // streaming; the scan's picked
+static vinyl_scan s_scan;
+static tc_dec     s_dec;
+static vinyl_win  s_win;
+static uint32_t   s_dvsUs, s_dvsRate;
+static char       s_dvsText[24];
+static void dvsBegin(void)
+{
+    s_dvsRate = umsc_audio.rate ? umsc_audio.rate : 48000;
+    vinyl_scan_begin(&s_scan, s_dvsRate);
+    vinyl_win_init(&s_win);
+    s_dvsFound = 0; s_dvsUs = 0;
+}
+static void dvsStep(void)
+{
+    static int16_t b[2 * 256];
+    uint32_t n;
+    while ((n = umsc_audio_read(b, 256)) > 0) {   // (5.3 ms at a time)
+        int16_t peak = 0;
+        for (uint32_t i = 0; i < 2 * n; i++) { const int16_t a = b[i] < 0 ? (int16_t)(b[i] == -32768 ? 32767 : -b[i]) : b[i]; if (a > peak) peak = a; }
+        s_dvsUs += n * 1000000u / s_dvsRate;
+        if (!s_dvsFound) {
+            if (!vinyl_scan_push(&s_scan, b, n, s_dvsUs)) continue;
+            tc_begin(&s_dec, s_dvsRate, vinyl_scan_side(&s_scan), 0, 0);   // (no position table yet: relative)
+            tc_flags(&s_dec, vinyl_scan_flags(&s_scan));
+            s_dvsFound = 1;
+            H->log_u32("dvs: side B?, flags", (uint32_t)(vinyl_scan_side(&s_scan) == TC_SERATO_VINYL_B) << 8 | vinyl_scan_flags(&s_scan));
+            continue;
+        }
+        tc_push(&s_dec, b, n);
+        const vinyl_rec* r = vinyl_step(&s_win, s_dvsUs, peak, &s_dec, 0);
+        if (r->armed) app_vinyl(1, (int32_t)(r->speed * 65536.0f));
+    }
+}
+static void dvsLabel(void)                        // the top line's left: what the record's doing
+{
+    char* p = s_dvsText;
+    const char* a = !s_dvsFound ? "DVS: play the record" : !s_win.r.armed ? "DVS: waiting" : !s_win.r.signal ? "DVS: stopped" : 0;
+    if (a) { while (*a) *p++ = *a++; }
+    else {
+        const char* h = vinyl_scan_side(&s_scan) == TC_SERATO_VINYL_B ? "DVS B " : "DVS A ";
+        while (*h) *p++ = *h++;
+        float v = s_win.r.speed;
+        if (v < 0) { *p++ = '-'; v = -v; }
+        const uint32_t c = (uint32_t)(v * 100.0f + 0.5f);
+        *p++ = (char)('0' + c / 100 % 10); *p++ = '.'; *p++ = (char)('0' + c / 10 % 10); *p++ = (char)('0' + c % 10); *p++ = 'x';
+    }
+    *p = 0;
+}
+#define DVS_W 150
+static void dvsText(void)
+{
+    H->cv_begin(DVS_W, 17, 0);
+    H->cv_text(0, 0, 0, s_dvsText, s_dvsFound && s_win.r.signal ? HB_RGB(80, 220, 110) : HB_RGB(255, 210, 0));
+    TIMED(s_tLcd, H->cv_blit(4, 2));
+}
+static void stickText(int row, const char* t, uint16_t c)
+{
+    H->fill(0, 70 + row * 20, 240, 20, 0);
+    H->text(0, 70 + row * 20, 240, 0, t, c, 1);
+}
+static int stickWait(uint32_t full)               // 1: the deck runs (the stick is read), 0: still on this screen
+{
+    static uint8_t shown = 0xFF, play;
+    const uint8_t p = (uint8_t)(s_pins & PIN_PLAY), pressed = p && !play;
+    play = p;
+    if (s_stick == 2 && s_dvs) {                  // DVS: the interface streaming (on interrupts); the stick's reads,
+        int up_ = umsc_audio_present();            //  the hub's checks and the DJ2Go's polls hold it briefly
+        if (up_ && s_drive) TIMED(s_tUsb, up_ = umsc_present());
+        if (up_) {
+            static uint32_t at;
+            const uint32_t now = H->ticks();
+            if (umsc_midiid && now - at > 24000u * 16u) {   // (16 ms: each poll holds the audio up to ~3 ms)
+                at = now;
+                uint8_t b[64];
+                int n;
+                TIMED(s_tUsb, n = umsc_midi(b));
+                for (int i = 0; i + 4 <= n; i += 4) if (b[i] & 0x0F) midi(b[i + 1], b[i + 2], b[i + 3]);
+            }
+            dvsStep();
+            return 1;
+        }
+        H->log_u32("dvs: interface or stick out; packets", umsc_apk);
+        H->log_u32("dvs: holds, longest us", umsc_aheld << 12 | (umsc_aheldMax / 24u & 0xFFFu));
+        H->log_u32("dvs: re-asks / errors", umsc_amiss << 16 | (umsc_aerr & 0xFFFFu));
+        H->log_u32("dvs: CON0 then", umsc_audio_con0);
+        umsc_audio_stop();
+        app_vinyl(0, 0);
+        s_dvs = 0;
+        give();
+        g_deck.playing = 0; g_app.state = ST_STOP;
+        s_stick = 0;
+        full = 1;
+    }
+    if (s_stick == 2) {                           // the stick pulled out: the port back to fm1-dock (so a computer
+        int up_;
+        TIMED(s_tUsb, up_ = umsc_present());
+        if (up_) {                     //  plugged in next gets it; HOME alone doesn't stop a module)
+            static uint32_t at;                   // a DJ2Go on the hub too: polled every 8 ms (a poll with nothing
+            const uint32_t now = H->ticks();      //  to say takes ~2 ms: its NAK limit), into the DJ2Go map
+            if (umsc_midiid && now - at > 24000u * 8u) {
+                at = now;
+                uint8_t b[64];
+                int n;
+                TIMED(s_tUsb, n = umsc_midi(b));
+                for (int i = 0; i + 4 <= n; i += 4) if (b[i] & 0x0F) midi(b[i + 1], b[i + 2], b[i + 3]);
+            }
+            return 1;
+        }
+        H->log_u32("stick: pulled out, USB back to fm1-dock; read errors", s_rdErr);
+        give();
+        g_deck.playing = 0; g_app.state = ST_STOP;
+        s_stick = 0;
+        full = 1;
+    }
+    if (full) shown = 0xFF;
+    if (s_stick == 0 && !dockKnown()) s_stick = 3;
+    if ((s_stick == 0 || s_stick == 4) && pressed) { take(); s_stick = 1; }
+    if (s_stick == 1 && (s_pins & PIN_SHIFT)) { give(); s_stick = 0; }   // FX while waiting: never mind
+    if (s_stick == 1 && umsc_attached()) {
+        stickText(4, "reading the stick", HB_RGB(255, 210, 0));
+        const uint32_t t0 = H->ticks();
+        const int ro = umsc_open();
+        H->log_u32("stick: open took ms", (H->ticks() - t0) / 24000u);
+        H->log_u32(ro ? "stick: open failed" : "stick: open, blocks", ro ? umsc_err : umsc_blocks);
+        H->log_u32("stick: vid/pid", umsc_vid << 16 | umsc_pid);
+        if (umsc_midiid) H->log_u32("stick: midi vid/pid", umsc_midiid);
+        if (umsc_hubid) { H->log_u32("stick: hub vid/pid", umsc_hubid); H->log_u32("stick: hub port", umsc_hub);
+                         for (uint32_t i = 0; i < umsc_ntrace; i++) H->log_u32("stick: hub trace", umsc_trace[i]); }
+        if (umsc_audio.ep) {                      // an audio interface: DVS; the tracks from a drive on the hub with
+            H->log_u32("dvs: interface vid/pid", umsc_audio.id);   //  it, else from the module's flash
+            const int ra = umsc_audio_start();
+            H->log_u32(ra ? "dvs: start failed" : "dvs: streaming, rate", ra ? (uint32_t)-ra : umsc_audio.rate);
+            if (ra == 0) {
+                s_drive = ro == 0; s_dvs = 1; dvsBegin();
+                for (uint32_t i = 0; i < SLOTS; i++) s_cfirst[i] = 0;
+                s_card.blocks = s_drive ? umsc_blocks : memcard_blocks;
+                H->log_u32(s_drive ? "dvs: tracks from the stick, blocks" : "dvs: tracks from flash, blocks", s_card.blocks);
+                sd_emu_reset(&s_card);
+                s_card.access = 2; s_card.gap = 1;
+                H->fill(0, HB_TOP, 240, 240 - HB_TOP, 0);
+                s_stick = 2;
+                app_init();
+                return 1;
+            }
+        }
+        if (ro == 0) {
+            s_drive = 1;
+            for (uint32_t i = 0; i < SLOTS; i++) s_cfirst[i] = 0;
+            s_card.blocks = umsc_blocks;
+            sd_emu_reset(&s_card);
+            s_card.access = 2; s_card.gap = 1;
+            H->fill(0, HB_TOP, 240, 240 - HB_TOP, 0);
+            s_stick = 2;
+            app_init();
+            return 1;
+        }
+        give();
+        s_stick = 4;
+    }
+    if (shown == s_stick) return 0;
+    shown = s_stick;
+    H->fill(0, HB_TOP, 240, 240 - HB_TOP, 0);
+    const uint16_t w = HB_RGB(235, 235, 235), y = HB_RGB(255, 210, 0), b = HB_RGB(40, 170, 255), r = HB_RGB(255, 70, 50);
+    if (s_stick == 3) {
+        stickText(0, "USB STICK NEEDS", r); stickText(1, "FM1-DOCK 0.9.0", r);
+        stickText(3, "(this one isn't)", w);
+    } else if (s_stick == 1) {
+        stickText(0, "WAITING FOR", w); stickText(1, "THE STICK", w);
+        stickText(3, "powered OTG adapter", b); stickText(4, "FX: give USB back", w);
+    } else {
+        char e[24] = "error ";
+        uint32_t v = umsc_err, n = 6;
+        if (s_stick == 4) { char t[10]; int k = 0; do { t[k++] = (char)('0' + v % 10); v /= 10; } while (v); while (k) e[n++] = t[--k]; e[n] = 0; }
+        stickText(0, "USB STICK / DVS", y);
+        stickText(1, "PLAY: switch USB", w); stickText(2, "to the stick or a", w);
+        stickText(3, "USB audio input (DVS)", w);
+        stickText(4, "(the computer link goes;", b);
+        stickText(5, "pull it out: it's back)", b);
+        if (s_stick == 4) stickText(6, e, r);
+    }
+    return 0;
+}
+#endif
 static void work(uint32_t full)
 {
     if (full) s_layout = 0xFF;                    // layout() clears and redraws it all
+#if FM1_STICK
+    if (!stickWait(full)) return;
+#endif
 #if FM1_HOST
     static uint32_t helloAt, statAt;
     if (!s_started) {                             // the computer first: the card's pinned blocks
@@ -556,7 +858,7 @@ static void work(uint32_t full)
 // The top line is the deck's (HB_F_SCREEN): its name and the CPU meter, the share of the time the deck's
 // main-loop work takes (decoding, keylock, the screen; fm1-dock's own "%" there would count only the
 // audio interrupt, ~0.4 % here), measured on the 24 MHz counter, every second.
-#if FM1_HOST
+#if FM1_HOST || FM1_STICK
 #define DECK_NAME "FREEDJ NANO"
 #else
 #define DECK_NAME "FREEDJ NANO"
@@ -576,11 +878,14 @@ static void cpuText(void)
                      : s_cpu >= 50 ? HB_RGB(255, 210, 0) : HB_RGB(80, 220, 110);
     H->cv_begin(CPU_W, 17, 0);
     H->cv_text(CPU_W - 4 - H->text_w(0, t), 0, 0, t, c);   // right-aligned, 4 px in from the edge
-    H->cv_blit(240 - CPU_W, 2);
+    TIMED(s_tLcd, H->cv_blit(240 - CPU_W, 2));
 }
 static void header(void)                          // all of the line: on a full redraw only
 {
     H->fill(0, 0, 240, HB_TOP - 1, 0);
+#if FM1_STICK
+    if (s_dvs) { dvsLabel(); dvsText(); } else
+#endif
     H->text(4, 2, 140, 0, DECK_NAME, HB_RGB(170, 140, 255), 0);
     H->fill(0, HB_TOP - 2, 240, 1, HB_RGB(90, 90, 90));
     cpuText();
@@ -590,6 +895,14 @@ static void meter(void)
     const uint32_t now = H->ticks(), span = now - s_meterAt;
     if (span < 24000000u) return;                 // a second
     const uint32_t pct = s_busy / (span / 100u);
+    {   // every 5 s, to the log: busy, of it USB waits and the panel, in % of the time
+        static uint32_t n5, b5, u5, l5;
+        b5 += pct; u5 += s_tUsb / (span / 100u); l5 += s_tLcd / (span / 100u); s_tUsb = s_tLcd = 0;
+        if (++n5 >= 5) {
+            H->log_u32("cpu: busy / usb / lcd %, 5 s", (b5 / 5) << 16 | (u5 / 5) << 8 | l5 / 5);
+            n5 = b5 = u5 = l5 = 0;
+        }
+    }
     s_busy = 0; s_meterAt = now;
 #if FM1_HOST
     if (s_started) H->midi_send(0xBF, 113, pct > 127 ? 127 : pct);
@@ -604,6 +917,19 @@ static void draw(uint32_t full)
     work(full);
     if (full) header();                           // (after work(): a full redraw clears the screen first)
     else if (s_hdr && lcdFree() && !s_wState) { s_hdr = 0; cpuText(); }   // (its text would wait for a band going)
+#if FM1_STICK
+    else if (s_dvs && lcdFree() && !s_wState) {   // the DVS line, as it changes (at most 4 times a second)
+        static uint32_t at;
+        static char was[24];
+        if (H->ms() - at >= 250) {
+            at = H->ms();
+            dvsLabel();
+            int same = 1;
+            for (int i = 0; i < 24; i++) { if (was[i] != s_dvsText[i]) same = 0; if (!s_dvsText[i]) break; }
+            if (!same) { for (int i = 0; i < 24; i++) was[i] = s_dvsText[i]; dvsText(); }
+        }
+    }
+#endif
     const uint32_t d = H->ticks() - t0;
     s_busy += d;
     if (d > s_maxWork) s_maxWork = d;
@@ -623,18 +949,25 @@ static int init(const hb_host_t* h)
     for (int i = 0; i < 4; i++) s_holeLba[i] = 0; for (uint32_t i = 0; i < SIDE; i++) s_sideTag[i] = 0;
     for (int i = 0; i < 4; i++) s_askedLba[i] = 0;
     for (uint32_t i = 0; i < CACHE; i++) s_tag[i] = s_halfTag[i] = 0;
+#elif FM1_STICK
+    s_card.blocks = 1; s_stick = 0; s_took = 0; s_drive = 0; s_dvs = 0;   // (the stick's size once it's read; app_init() then)
+    for (uint32_t i = 0; i < SLOTS; i++) s_cfirst[i] = 0;
 #else
     s_card.blocks = memcard_blocks;
 #endif
     sd_emu_reset(&s_card);
     s_card.access = 2; s_card.gap = 1;            // RAM answers at once
-#if !FM1_HOST
+#if !FM1_HOST && !FM1_STICK
     app_init();
 #endif
     return 0;
 }
 
+#if FM1_STICK
+static void release(void) { if (s_dvs) { umsc_audio_stop(); s_dvs = 0; } give(); }   // (HOME: the port back to fm1-dock)
+#else
 static void release(void) {}
+#endif
 
 HB_DESC = {
     .abi = HB_ABI, .name = "FREEDJ", .init = init, .release = release,

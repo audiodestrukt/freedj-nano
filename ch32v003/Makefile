@@ -4,6 +4,7 @@
 #   make pwm     the PWM audio output modelled: measurements, and WAVs of IN= (default: the keylock test output)
 #   make sim     the whole deck on the computer (fw/ on emulated parts): build/sim, card image from MUSIC=
 #   make simtest scripted sessions through the sim, checked
+#   make vinyltest  the DVS decoder and vinyl rules on the computer (sides A and B, timecode.wav)
 #   make deckbench  the whole firmware for RV32EC in qemu: flash, RAM, stack, CPU by part, worst main-loop step
 #   CHIP=py32       sim and deckbench for the PY32F030 instead (Cortex-M0+, 8 KB RAM: an 8-block audio ring)
 #   make py32       the firmware for the PY32F030 board (py32/), build/py32fw/deck.hex
@@ -21,6 +22,16 @@ build/test_lite: lite/lite.c lite/ulaw.c lite/lite.h tests/test_lite.cpp $(NANO)
 	gcc $(CFLAGS) -c lite/lite.c -o build/lite.o
 	gcc $(CFLAGS) -c lite/ulaw.c -o build/ulaw.o
 	g++ $(CFLAGS) -std=c++17 -I$(NANO)/include tests/test_lite.cpp $(NANO)/src/stretch.cpp build/lite.o build/ulaw.o -o $@
+
+# the DVS pieces on the computer: the timecode decoder (and freedj-esp's timecode.wav if it's there), the vinyl rules
+TCWAV ?= ../../freedj-esp/timecode.wav
+vinyltest:
+	@mkdir -p build
+	gcc -O2 -Wall -Wextra -Ifw sim/vinyl_test.c fw/vinyl.c fw/timecode.c -lm -o build/vinyl_test
+	gcc -O2 -Wall -Ifw sim/tc_test.c fw/timecode.c -lm -o build/tc_test
+	gcc -O2 -Wall -Ifw sim/tc_lookup.c fw/timecode.c -o build/tc_lookup
+	./build/vinyl_test
+	./build/tc_test $(TCWAV)
 
 bench:
 	sh bench/bench.sh
@@ -123,6 +134,12 @@ build/fm1/freedj-usb.dock: fm1/*.c fm1/usb/module.cfg $(FW) fw/*.h lite/lite.h
 	cd $(FM1_DOCK) && JIELI_TOOLCHAIN=$(JIELI_TOOLCHAIN) python3 tools/hbmod.py $(CURDIR)/fm1/usb
 	cp $(FM1_DOCK)/build/modules/usb.dock $@
 fm1-usb: build/fm1/freedj-usb.dock
+# FM1_STICK: the tracks on a USB stick in the FM-1's own port (fm1/stick/, fm1/usbmsc.c; fm1-dock 0.9.0)
+build/fm1/freedj-stick.dock: fm1/*.c fm1/*.h fm1/stick/module.cfg $(FW) fw/*.h lite/lite.h build/fm1/memcard.c fw/timecode.c fw/vinyl.c
+	@mkdir -p build/fm1
+	cd $(FM1_DOCK) && JIELI_TOOLCHAIN=$(JIELI_TOOLCHAIN) python3 tools/hbmod.py $(CURDIR)/fm1/stick
+	cp $(FM1_DOCK)/build/modules/stick.dock $@
+fm1-stick: build/fm1/freedj-stick.dock
 # the card it streams (FM1_MUSIC= audio files, as many as you like), and the module installed in a flash of its own
 FM1_MUSIC ?= $(DEMO) $(dir $(DEMO))bass.wav $(dir $(DEMO))sine.wav
 build/fm1/usb.img: tools/pack_lite.py tools/sdimage.py
@@ -155,4 +172,4 @@ fm1-emu: build/fm1/flash.bin
 	$(FM1_EMU) --ms $(FM1_MS) --keys '$(FM1_KEYS)' --out $(CURDIR)/build/fm1/emu
 
 FORCE:
-.PHONY: test bench pwm sd sim simtest deckbench py32 flash-py32 fm1 fm1-usb fm1-usb-live fm1-emu fm1-live FORCE
+.PHONY: test bench pwm sd sim simtest deckbench py32 flash-py32 fm1 fm1-usb fm1-stick fm1-usb-live fm1-emu fm1-live FORCE

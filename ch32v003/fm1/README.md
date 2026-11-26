@@ -14,13 +14,16 @@ FM-1.
 
 ![The deck in fm1-emu](../../docs/media/fm1-deck.png)
 
+What we found out about the FM-1 itself (the chip, its FPU, memory, interrupts, the screen, USB host mode,
+the devices tried) is in [HARDWARE.md](HARDWARE.md).
+
 ## Controls
 
 | FM-1 | The deck |
 |---|---|
 | SELECT | the jog (nudge while playing, scrub while paused) |
-| FX + SELECT | opens the track list; then SELECT moves, its push loads, FX tapped closes it |
-| EDIT, SELECT's push | the encoder's push: keylock; loads in the list; FX + EDIT: tempo range |
+| FX + SELECT | opens the track list (SEL lights); then SELECT moves, SEL or PLAY loads, FX tapped closes it |
+| EDIT | the encoder's push: keylock; loads in the list; FX + EDIT: tempo range |
 | KNOB1 | tempo (the pitch pot) |
 | SEQ | CUE (left of PLAY, as on a CDJ) |
 | PLAY | PLAY |
@@ -85,7 +88,7 @@ then the watchdog restarts the FM-1 and `tools/probe.py result` reads what it sa
 
 ```
 cd ~/sandbox/thirdparty/fm1-dock && uv run --with python-rtmidi tools/probe.py run \
-  ~/sandbox/audiodestrukt/freedj-nano/ch32v003/fm1/usbhost.c --on fm1 --args 20,20 --ms 90000
+  ~/sandbox/audiodestrukt/freedj-nano/ch32v003/fm1/probes/usbhost.c --on fm1 --args 20,20 --ms 90000
 ```
 
 The controller takes the host role (DEVCTL 0x0F: session, host mode), but through an Apple USB-C
@@ -144,7 +147,40 @@ crashed once right after starting (it restarts and runs).
 
 ## Still to do
 
-- The USB stick: the probe through a passive, powered OTG adapter (above); then mass storage and FAT.
+- The USB stick: done (FREEDJ STICK), straight on a powered passive OTG adapter or behind a plain USB-A hub
+  on one. Hubs: `usbmsc.c` powers each hub's ports, resets each occupied one, and gives every device its own
+  address, hubs within hubs too (the cheap 7-port kind is two 4-port chips, the second on the first's port 1:
+  seen on a 1a40:0101). A non-drive's port is switched off again. Full speed only, so hubs only pass the
+  traffic through: reads run as fast as with the stick straight in. Behind a hub the root lines say nothing
+  about the stick: a failed read asks the hub's port instead (so an idle deck notices a pulled stick only
+  at its next read). Opening through two hubs takes a few seconds.
+- **Revisit: the stick without poking fm1-dock's internals.** The first deck build takes the port by writing
+  fm1-dock 0.9.0's own `usb.up` / `usb.detached` (their address from a build of its commit 5d16166, checked
+  against the FM-1's flash), so its 2 kHz USB poll and its retry leave the controller alone. To work out
+  before relying on it: it ties the module to that exact fm1-dock build (a check at start, or it refuses);
+  The long open through hubs also feeds fm1-dock's 8 s watchdog itself (its P33 WDT_CON, as `fm1_wdt_feed()`
+  does: modules aren't given a feed, probes are). What else touches the controller (the audio interrupt's `uac_service`, the deploy path, BLE); what the
+  release must put back; the computer link gone while it runs (no deploy, the rescue still OCT- at power-on).
+  The right thing: an fm1-dock API for a module to ask for the port as a host (and give it back), proposed
+  upstream.
+- USB-MIDI controllers in host mode (a DJ2Go straight in: class 01/03, its bulk IN read every ~10 ms with a
+  NAK limit of a frame, into the same DJ2Go map), alongside the stick on a hub (the hub code skips it for
+  now: each transfer would set FADDR to its device, one at a time).
+- **DVS (relative): in FREEDJ STICK.** A USB audio interface on the port (a UCA202) and a Serato Control Vinyl
+  into it: the side and the decoder flags found in the first half second (`vinyl_scan`), then the record's speed
+  and direction drive the deck (`app_vinyl`), the tracks from the module's flash. The interface goes **straight
+  on the FM-1's port**: behind the two cheap hubs its power LED stays off and its input is ~3x noisier (no lock;
+  HARDWARE.md). Next: the position (the 3 MB table on the stick, then ABS / needle drops: `vinyl_follow`).
+- **TODO: the hub and the stick with DVS.** (1) A hub the UCA202 works behind: a powered USB 2.0 / 3 hub (any
+  runs full speed under the FM-1), one hub not two in a chain; check its LED and the decode (bit levels as on the
+  PC). (2) The stick and the interface sharing the bus: the controller has one device address (FADDR), and the
+  audio's interrupt asks for a packet every frame; the stick's reads (and the DJ2Go's polls, and the hub's port
+  checks) have to fit between, with FADDR switched and put back around them (or the drive read with the audio
+  held for a frame or two). Until then a drive found with an interface is left unused.
+- **TODO: one FM-1 build.** FREEDJ (tracks in flash), FREEDJ USB (from the computer) and FREEDJ STICK (stick,
+  DVS) into one module that picks at run time from what's there; the FM-1 has room for one deck build (flash:
+  the built-in tracks alone are ~190 KB).
+- Plain MP3s on the stick (a decoder on the FM-1; peaks made as it loads) besides TRACKS.BIN.
 - Browsing on its own encoder (PRESETS), no FX to hold.
 - The 27 keys: hot cues, loops.
 - A layout of its own at 240 x 240 instead of the OLED's pages laid out.
