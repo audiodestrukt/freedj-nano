@@ -171,12 +171,10 @@ crashed once right after starting (it restarts and runs).
   and direction drive the deck (`app_vinyl`), the tracks from the module's flash. The interface goes **straight
   on the FM-1's port**: behind the two cheap hubs its power LED stays off and its input is ~3x noisier (no lock;
   HARDWARE.md). Next: the position (the 3 MB table on the stick, then ABS / needle drops: `vinyl_follow`).
-- **TODO: the hub and the stick with DVS.** (1) A hub the UCA202 works behind: a powered USB 2.0 / 3 hub (any
-  runs full speed under the FM-1), one hub not two in a chain; check its LED and the decode (bit levels as on the
-  PC). (2) The stick and the interface sharing the bus: the controller has one device address (FADDR), and the
-  audio's interrupt asks for a packet every frame; the stick's reads (and the DJ2Go's polls, and the hub's port
-  checks) have to fit between, with FADDR switched and put back around them (or the drive read with the audio
-  held for a frame or two). Until then a drive found with an interface is left unused.
+- **TODO: the hub and the stick with DVS.** (1) Done: a GL850G hub (05e3:0610) powers the UCA202 and DVS locks
+  behind it (the cheap FE1.1 hubs starve it). (2) Built, not yet tested on the device: the stick, the DJ2Go and
+  the interface sharing the bus, the audio stream paused around each stick read, hub check and DJ2Go poll (one
+  FADDR). Check the log's hold count and longest hold. See USB-HUBS-AUDIO.md.
 - **TODO: one FM-1 build.** FREEDJ (tracks in flash), FREEDJ USB (from the computer) and FREEDJ STICK (stick,
   DVS) into one module that picks at run time from what's there; the FM-1 has room for one deck build (flash:
   the built-in tracks alone are ~190 KB).

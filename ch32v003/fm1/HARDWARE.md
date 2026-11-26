@@ -113,6 +113,9 @@ controller, in `apps/common/usb/host/`: `audio.c` (iso in / out from the endpoin
 register-level functions they call (`usb_h_ep_read_async`, `usb_h_ep_config`, ...) are in a closed library: only
 their headers (`include_lib/driver/device/usb/usb_phy.h`). What's below is what we found where those stop.
 
+How hubs, the stick, the DJ2Go and a UCA202 got working together, and the rules that came out of it:
+[USB-HUBS-AUDIO.md](USB-HUBS-AUDIO.md).
+
 The controller is a Mentor MUSB-style SIE behind JieLi's own registers. **Everything below is measured** with
 `probes/usbhost.c`, `usbstick.c`, `usbaudio.c` and FREEDJ STICK, unless it says otherwise.
 
@@ -192,7 +195,8 @@ RXFUNCADDR for EP0) acted like writing FADDR (*measured*, `stick: hub trace 9f..
 | Device | VID:PID | Notes |
 |---|---|---|
 | USB stick (30 GB) | 346d:5678 | bulk-only mass storage, 512-byte blocks; reads fine straight in and through two hubs |
-| plain 4-port hub | 1a40:0101 | Terminus FE 1.1; the bought "hub" was two of them in series |
+| plain 4-port hub | 1a40:0101 | Terminus FE 1.1; the bought "hub" was two of them in series | bus-powered: starves a UCA202 (LED off, noisy input) |
+| Genesys GL850G hub | 05e3:0610 | USB 2.0, runs full speed under the FM-1; powers a UCA202 properly (LED on, DVS locks) |
 | Numark DJ2Go | 15e4:0027 | USB-MIDI, a bulk IN endpoint |
 | Behringer UCA202 | 08bb:2902 | TI PCM2902, UAC1: record interface 2 alt 1, iso IN EP 4 (0x84), max packet 196, 2 ch 16-bit, 48 kHz (its default: our SET_CUR of the rate was refused, error -13, and wasn't needed) |
 | (DVS, *measured* `probes/usbirq.c`) | | Serato Control Vinyl through a UCA202's line in, **the UCA202 straight on the FM-1's port: locks** - side B flags 0 locked forwards 3818 ms of 4 s, runs of 3836 bits, speed 0.985-1.018, the side scan (`vinyl_scan`) picking side B; the ping-pong and the wait-60-us packet handling alike, the sine's residual flat across the 48-frame packet (no packet fault). **Behind the two cheap hubs (and an extension with its own supply) the UCA202's power LED stays off and its input is ~3x noisier** (bit levels 2.8 sd apart, against 8 on the PC): no lock. Its USB side keeps working (0 misses), so it looks fine until you decode: put an audio interface on the port itself, or on a hub known to give it power. Also: the record's **side** matters (B is A's code backwards; read as A it "locks" backwards only), and a first UCA202 had a dead left input |
