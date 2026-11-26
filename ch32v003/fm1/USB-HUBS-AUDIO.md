@@ -40,7 +40,7 @@ Behringer UCA202, for DVS), a USB stick and a DJ2Go, alone and through hubs. The
 |---|---|---|---|---|
 | none (straight on the OTG adapter) | | works | works | **works**: side B locked ~95 % |
 | cheap 4/7-port, bus-powered (Terminus FE1.1) | 1a40:0101 | works, through two in a chain | works | **no lock**: LED off, input ~3x noisier |
-| Genesys GL850G | 05e3:0610 | *not yet tested with the UCA202 streaming* | | **works**: LED on, locks |
+| Genesys GL850G | 05e3:0610 | works, with the UCA202 streaming | works, with the UCA202 streaming | **works**: LED on, locks |
 
 - **The cheap 7-port hubs are two 4-port chips**, the second on the first's port 1. `usbmsc.c` walks hubs within
   hubs, powers each port, resets each occupied one, and gives every device its own address. *Measured.*
@@ -113,8 +113,9 @@ controller behind the main loop's back. Streaming on interrupts broke that in th
 - **One FADDR.** The audio interrupt addresses the UCA202 every millisecond, so any other transfer has to take
   the bus. `a_pause` holds the stream (it lets the packet in flight finish), the transfer sets its own address,
   and `a_resume` puts the UCA202's back and restarts from a fresh buffer. Pauses nest. `umsc_read` (stick), the
-  hub check in `umsc_present` and `umsc_midi` (DJ2Go) are wrapped. *Running on the device; not yet tested with
-  all three on the GL850G.*
+  hub check in `umsc_present` and `umsc_midi` (DJ2Go) are wrapped. *Works on the device* (2026-11-26): stick, DJ2Go
+  and UCA202 on the GL850G, the record driving the deck with the stick's tracks. The hold counts are still to be
+  read from the log.
 
 What a pause costs: a 4 KB stick read is a few milliseconds of missing timecode, a few times a second. The vinyl
 rules call the record stopped only after 40 ms without carrier, so relative DVS rides over it. The DJ2Go poll

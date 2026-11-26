@@ -5,6 +5,9 @@
 #   make sim     the whole deck on the computer (fw/ on emulated parts): build/sim, card image from MUSIC=
 #   make simtest scripted sessions through the sim, checked
 #   make vinyltest  the DVS decoder and vinyl rules on the computer (sides A and B, timecode.wav)
+#   make prolinktest  Pro DJ Link (fw/prolink.c) on the computer, against a real XDJ-1000MK2's packets
+#   make prolinkdiff  every packet of freedj-3000's captures through fw/prolink.c and through freedj-3000's parser
+#   make prolinkbench fw/prolink.c as player 4 beside Deckbench's simulated players on the loopback (follow, SYNC, MASTER)
 #   make deckbench  the whole firmware for RV32EC in qemu: flash, RAM, stack, CPU by part, worst main-loop step
 #   CHIP=py32       sim and deckbench for the PY32F030 instead (Cortex-M0+, 8 KB RAM: an 8-block audio ring)
 #   make py32       the firmware for the PY32F030 board (py32/), build/py32fw/deck.hex
@@ -25,6 +28,32 @@ build/test_lite: lite/lite.c lite/ulaw.c lite/lite.h tests/test_lite.cpp $(NANO)
 
 # the DVS pieces on the computer: the timecode decoder (and freedj-esp's timecode.wav if it's there), the vinyl rules
 TCWAV ?= ../../freedj-esp/timecode.wav
+F3K ?= ../../freedj-3000
+CAPS := $(F3K)/reference/link-captures
+prolinktest:
+	@mkdir -p build
+	gcc -O2 -Wall -Wextra -Wconversion -Ifw sim/prolink_test.c fw/prolink.c -lm -o build/prolink_test
+	./build/prolink_test
+	gcc -O2 -Wall -Wextra -Ifw sim/prolink_replay.c fw/prolink.c -o build/prolink_replay
+	@if [ -d $(CAPS) ]; then \
+	  ./build/prolink_replay $(CAPS)/xdj-1000mk2-playing-2026-08-26.log --summary | grep -q "player 1 @ 126.00 BPM, playing, beating" && \
+	  ./build/prolink_replay $(CAPS)/xdj-1000mk2-emulated-play-pause-pitch-2026-11-23.log --summary | grep -q "player 1 @ 122.90 BPM, playing, beating" && \
+	  ./build/prolink_replay $(CAPS)/xdj-1000mk2-idle-2026-08-26.log --summary | grep -q "master: none" && \
+	  echo "prolink_replay: freedj-3000's XDJ-1000MK2 captures followed" || { echo "prolink_replay: FAIL"; exit 1; }; \
+	else echo "prolink_replay: no $(CAPS), skipped"; fi
+
+prolinkbench: prolinktest
+	gcc -O2 -Wall -Wextra -Ifw sim/prolink_seg.c fw/prolink.c fw/udpnet.c -o build/prolink_seg
+	python3 sim/prolink_bench.py
+
+prolinkdiff: prolinktest
+	cargo build --offline -q --release --manifest-path sim/f3kdump/Cargo.toml --target-dir build/f3kdump
+	@for f in $(CAPS)/*.log; do \
+	  ./build/prolink_replay $$f 2>/dev/null | grep -v '^other' > build/pl.c.txt; \
+	  ./build/f3kdump/release/f3kdump $$f | grep -v '^other' > build/pl.rs.txt; \
+	  if cmp -s build/pl.c.txt build/pl.rs.txt; then echo "same: $$(wc -l < build/pl.c.txt) packets, $$(basename $$f)"; \
+	  else echo "DIFFER: $$(basename $$f)"; diff build/pl.c.txt build/pl.rs.txt | head; exit 1; fi; done
+
 vinyltest:
 	@mkdir -p build
 	gcc -O2 -Wall -Wextra -Ifw sim/vinyl_test.c fw/vinyl.c fw/timecode.c -lm -o build/vinyl_test
@@ -172,4 +201,4 @@ fm1-emu: build/fm1/flash.bin
 	$(FM1_EMU) --ms $(FM1_MS) --keys '$(FM1_KEYS)' --out $(CURDIR)/build/fm1/emu
 
 FORCE:
-.PHONY: test bench pwm sd sim simtest deckbench py32 flash-py32 fm1 fm1-usb fm1-stick fm1-usb-live fm1-emu fm1-live FORCE
+.PHONY: test prolinktest prolinkdiff prolinkbench vinyltest bench pwm sd sim simtest deckbench py32 flash-py32 fm1 fm1-usb fm1-stick fm1-usb-live fm1-emu fm1-live FORCE

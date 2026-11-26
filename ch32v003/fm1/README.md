@@ -172,9 +172,19 @@ crashed once right after starting (it restarts and runs).
   on the FM-1's port**: behind the two cheap hubs its power LED stays off and its input is ~3x noisier (no lock;
   HARDWARE.md). Next: the position (the 3 MB table on the stick, then ABS / needle drops: `vinyl_follow`).
 - **TODO: the hub and the stick with DVS.** (1) Done: a GL850G hub (05e3:0610) powers the UCA202 and DVS locks
-  behind it (the cheap FE1.1 hubs starve it). (2) Built, not yet tested on the device: the stick, the DJ2Go and
-  the interface sharing the bus, the audio stream paused around each stick read, hub check and DJ2Go poll (one
-  FADDR). Check the log's hold count and longest hold. See USB-HUBS-AUDIO.md.
+  behind it (the cheap FE1.1 hubs starve it). (2) Done, works on the device (2026-11-26): the stick, the DJ2Go
+  and the interface sharing the GL850G, the audio stream paused around each stick read, hub check and DJ2Go poll (one
+  FADDR). Still to read: the log's hold count and longest hold. See USB-HUBS-AUDIO.md.
+- **Pro DJ Link: the protocol done, the FM-1's network not yet.** `fw/prolink.c` is freedj-esp's
+  `prolink.cpp` in C (no OS, no libc, ~0.8 KB of RAM): announce, status, beats, the tempo master followed and
+  handed over both ways, sync / on-air / fader start, plus freedj-3000's fixes (pre-Nexus CDJ-2000 play state,
+  Wi-Fi twin beats, no leftover template track ID). `fw/udpnet.c` is ARP / IPv4 / UDP over raw frames, for a
+  USB Ethernet adapter. Tested without hardware: `make prolinktest` (210 checks, real XDJ-1000MK2 and
+  freedj-3000 captures), `make prolinkdiff` (every packet of freedj-3000's captures read the same as by
+  freedj-3000's own parser), `make prolinkbench` (player 4 beside Deckbench's players: follows, SYNCs within
+  0.05 beat, takes MASTER). Next, the FM-1's way onto a network: a CDC-ECM USB Ethernet adapter on the hub
+  (`udpnet` on its bulk endpoints), or the FM-1's own Wi-Fi (the SDK's closed driver: an RTOS shim, flash
+  and RAM to be measured). Not yet: player-number claiming, media answers (freedj-3000 has both).
 - **TODO: one FM-1 build.** FREEDJ (tracks in flash), FREEDJ USB (from the computer) and FREEDJ STICK (stick,
   DVS) into one module that picks at run time from what's there; the FM-1 has room for one deck build (flash:
   the built-in tracks alone are ~190 KB).

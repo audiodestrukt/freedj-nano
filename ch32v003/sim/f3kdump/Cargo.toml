@@ -1,0 +1,10 @@
+# f3kdump: freedj-3000's Pro DJ Link parser over its capture logs, one line a packet, to diff against
+# sim/prolink_replay (fw/prolink.c): make prolinkdiff. Needs freedj-3000 beside freedj-nano (F3K in the Makefile).
+[package]
+name = "f3kdump"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+[dependencies]
+opendeck-link = { path = "../../../../freedj-3000/crates/link" }
+[workspace]
